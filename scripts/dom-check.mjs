@@ -10,6 +10,8 @@ const { window } = dom;
 global.window = window;
 global.document = window.document;
 global.requestAnimationFrame = window.requestAnimationFrame.bind(window);
+// 浏览器里 localStorage 是个全局；jsdom 只把它挂在 window 上，得手动补
+global.localStorage = window.localStorage;
 
 const fail = (msg) => {
   console.error('✗', msg);
@@ -54,5 +56,71 @@ if (!$('.report')) fail('没进报告屏');
 console.log('✓ 报告屏:', $('.result-badge').textContent, '|', $('.title-name').textContent);
 console.log('  统计:', $$('.stat').map((s) => `${s.querySelector('.stat-label').textContent}=${s.querySelector('.stat-value').textContent}`).join(' '));
 console.log('  回放条数:', $$('.replay-item').length);
+
+/* ------------------------------------------------------------------ */
+/* 5. 设置弹窗：接入自己的 AI（放在最后，否则存了 key 后面会走网络）      */
+/* ------------------------------------------------------------------ */
+
+const gear = $('#settings-btn');
+if (!gear) fail('顶栏没有齿轮按钮');
+gear.click();
+
+const modal = $('.modal');
+if (!modal) fail('点齿轮没弹出设置窗');
+if ($('.modal-backdrop').parentElement !== window.document.body) fail('弹窗应该挂在 body 上');
+console.log('✓ 设置弹窗打开了，标题:', $('.modal-title').textContent);
+
+const segs = $$('.seg-btn');
+if (segs.length !== 3) fail(`服务商应该有 3 个选项，实际 ${segs.length}`);
+if ($('.seg-btn.is-active').textContent !== '本地引擎') fail('默认应该选中本地引擎');
+if ($('.key-row')) fail('本地引擎模式不该有 key 输入框');
+
+// 切到 Claude
+segs[1].click();
+if (!/Claude/.test($('.seg-btn.is-active').textContent)) fail('没切到 Claude');
+const keyInput = $('.key-row input');
+if (!keyInput) fail('切到 Claude 后没有 key 输入框');
+if (keyInput.type !== 'password') fail('key 默认应该打码');
+
+// 推理型模型警告：对话模型时不显示，一填推理模型就出现
+// 注意：预设下拉也是 .input，别按 .input 的序号取，按字段标签取
+const modelInput = $$('.modal-body .field')[2].querySelector('.input');
+const warnNode = $('.field-warn');
+if (!warnNode || !warnNode.hidden) fail('对话模型不该显示推理模型警告');
+modelInput.value = 'deepseek-reasoner';
+modelInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+if (warnNode.hidden) fail('填了推理型模型，警告应该出现');
+modelInput.value = 'claude-opus-5';
+modelInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+if (!warnNode.hidden) fail('换回对话模型，警告应该收起来');
+console.log('✓ 推理型模型警告随输入实时切换');
+
+keyInput.value = 'sk-ant-fake-key-for-test-0000';
+keyInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+$$('.modal-actions .btn')[2].click(); // 保存
+
+if ($('.modal')) fail('保存后弹窗应该关闭');
+const label = $('#engine-badge').textContent;
+if (!/^真实 AI · /.test(label)) fail(`保存后徽章应该变成真实 AI，实际「${label}」`);
+console.log('✓ 保存后徽章:', label);
+
+const stored = JSON.parse(window.localStorage.getItem('gang-ai:settings:v1'));
+if (stored.provider !== 'anthropic' || stored.apiKey !== 'sk-ant-fake-key-for-test-0000') {
+  fail('localStorage 里的设置不对');
+}
+console.log('✓ key 已写入 localStorage（provider=' + stored.provider + '）');
+
+// 再打开一次，清除
+$('#settings-btn').click();
+const clearBtn = $$('.modal-actions .btn')[1];
+clearBtn.click();
+if ($('#engine-badge').textContent !== '本地引擎') fail('清除后徽章应该回到本地引擎');
+if (window.localStorage.getItem('gang-ai:settings:v1')) fail('清除后 localStorage 应该被删掉');
+console.log('✓ 清除后徽章:', $('#engine-badge').textContent);
+
+$('.modal-head .ghost-btn').click();
+if ($('.modal')) fail('点 ✕ 应该关掉弹窗');
+console.log('✓ 弹窗关闭');
+
 console.log('\n全部通过 ✅');
 process.exit(0);
