@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>杠精陪练房 · GANG.AI</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">
+          杠精陪练房<span class="brand-en">GANG.AI</span>
+        </div>
+        <div class="topbar-right">
+          <span id="engine-badge" class="badge">本地引擎</span>
+          <button id="sound-toggle" class="ghost-btn" type="button" aria-pressed="false">
+            🔇 声音
+          </button>
+        </div>
+      </header>
+      <main id="screen" class="screen" aria-live="polite"></main>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
