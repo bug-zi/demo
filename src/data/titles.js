@@ -4,7 +4,7 @@ export const TITLES = [
   {
     id: 'swift',
     name: '人形自走破防器',
-    desc: '三轮之内让对手当场闭麦。你不是来吵架的，你是来拆房的。',
+    desc: '四轮之内让对手当场闭麦。你不是来吵架的，你是来拆房的。',
     rank: 'SSR',
   },
   {
@@ -44,7 +44,7 @@ export function pickTitle(duel) {
 
   if (duel.result === 'win') {
     const rounds = duel.rounds.length;
-    if (rounds <= 3 && duel.softspotHits >= 2) return byId('swift');
+    if (rounds <= 4 && duel.softspotKeys.length >= 2) return byId('swift');
     if (rounds <= 5) return byId('master');
     // 破防了但拖得久，也不算嘴笨
     return byId('master');
