@@ -91,8 +91,8 @@ Important current rules are centralized as constants in `duel-engine.js`: maximu
 - logs 只记流水，复盘与想法写进 `docs/draft/`
 - 详细规范见 `docs/README.md`
 
-## 工作台与设计区协作约定
+## 待办文档与设计区协作约定
 
-- 每轮开发任务开始前查看 `docs/工作台.md` 待办；完成一轮后把该轮条目（原始描述+完成说明）归入归档区顶部「第N轮（YYMMDD）」小节
+- 待办分流在 `docs/优化建议.md` / `docs/新功能.md` / `docs/问题与疑惑.md` 三个文档，每轮任务由开发者指定查阅哪个文档（或直接粘贴内容）。完成一轮后把该轮条目（原始描述+完成说明）移入该文档自己的归档区顶部，格式 `### YYMMDD ｜ 标题`
 - 大功能先在 `docs/design/idea/` 起一页纸，开发者确认立项后进 `docs/design/<模块>/` 走 design.md（开发者主导）→ designs-specs.md（AI 生成，开发唯一依据）双文档流程
 - spec/plan 落地后自动归档至模块 `archive/` 并把要点回写 `docs/project/` 对应现状文档；机制正本见 `docs/design/README.md`

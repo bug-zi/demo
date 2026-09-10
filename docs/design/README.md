@@ -16,7 +16,7 @@
 ## 生命周期
 
 ```
-工作台「新功能」小节（小件）── 直接开发
+新功能.md 待完成区（小件）── 直接开发
 大件 → idea/<名字>.md → 开发者说「立项」→ design/<模块>/
   → design.md（开发者写意图）→ designs-specs.md（AI 生成）
   → 实施 → 落地：spec/plan 入 archive/ + 要点回写 ../project/ 对应现状文档
