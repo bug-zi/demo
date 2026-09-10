@@ -43,7 +43,7 @@ export const TABLE_WEIGHT = 0.8;
 export const JUDGE_WEIGHT = 0.2;
 
 /**
- * 判断分的合法区间，跟查表值同量纲（自爆 −12 ~ 软肋 +34 上下）。
+ * 判断分的合法区间，跟查表值同量纲（自爆 −12 ~ 软肋 +32 上下）。
  *
  * 必须夹死：模型要是返回 999，乘完 20% 也能一回合把破防值顶满，
  * 整局就废了 —— 「模型抽风也坏不了游戏」这条底线不能因为加了 20% 就破掉。
@@ -144,8 +144,12 @@ export function localHitType(persona, text) {
  * 「三个预设刚好 90、补一句破百」的配平不会散架。
  * 加减刻意用跟软肋关键词无关的信号（复读、长度、标点、有没有引用对方），
  * 否则它只是把查表结果再算一遍，那 20% 就白加了。
+ *
+ * usedPreset 为真时跳过「太短」那条扣分：预设是设计者写的按钮，不是玩家自己
+ * 打的俩字。不跳过的话「你说得对」这种四字按钮会被判成敷衍，杠精网友只点预设
+ * 就停在 89 而不是 90 —— 配平表说的「三个预设刚好 90」就只对 4/5 个人设成立。
  */
-export function localJudge(duel, text, tableDelta) {
+export function localJudge(duel, text, tableDelta, usedPreset = false) {
   const t = normalize(stripEmoji(text));
   if (!t) return tableDelta; // 纯表情 / 空：不奖不罚
 
@@ -153,7 +157,7 @@ export function localJudge(duel, text, tableDelta) {
 
   const last = duel.rounds[duel.rounds.length - 1];
   if (last && normalize(stripEmoji(last.userText)) === t) score -= 8; // 复读机
-  if (t.length < 6) score -= 5; // 俩字就想打发人
+  if (!usedPreset && t.length < 6) score -= 5; // 俩字就想打发人（点按钮不算）
   if (/[!！?？]{2,}|\.{3,}/.test(t)) score -= 4; // 标点刷屏，底气不足
   if (HIT_HINTS.some((kw) => t.includes(kw))) score += 4; // 引用了对方 / 有反问
   if (t.length >= 20) score += 4; // 真把话说清楚了
@@ -203,7 +207,7 @@ export function recordTurn(duel, turn) {
   // 超时判的沉默不算「敷衍」，不扣分 —— 那不是玩家的句子。
   const judgeDelta = turn.silent
     ? table
-    : clampJudge(turn.judgeScore) ?? localJudge(duel, turn.userText, table);
+    : clampJudge(turn.judgeScore) ?? localJudge(duel, turn.userText, table, Boolean(turn.usedPreset));
   const delta = blendDelta(table, judgeDelta);
 
   duel.breakdown = clamp(before + delta, 0, MAX_BREAKDOWN);

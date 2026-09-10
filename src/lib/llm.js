@@ -82,7 +82,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* 本地引擎                                                            */
 /* ------------------------------------------------------------------ */
 
-function localTurn({ persona, duel, userText }) {
+function localTurn({ persona, duel, userText, usedPreset }) {
   const stage = stageOf(duel.breakdown);
   const hitType = localHitType(persona, userText);
   const spot = hitType === 'softspot' ? matchSoftspot(persona, userText) : null;
@@ -93,6 +93,10 @@ function localTurn({ persona, duel, userText }) {
   } else if (spot) {
     // 软肋台词优先；万一人设没写这条，退回当前阶段的台词
     reply = pick(persona.softspotReactions[spot.key] || persona.stages[stage.id]);
+  } else if (usedPreset && persona.presetReplies?.[userText]) {
+    // 诱饵预设：选项本身就是陷阱（甲方那个「我这就去改」），没有专属台词的话
+    // 它只是白扔一个回合；有的话玩家能看清自己是怎么被哄的
+    reply = persona.presetReplies[userText];
   } else if (stage.id === 'breakdown') {
     reply = pick(persona.breakdown);
   } else {
@@ -447,12 +451,16 @@ function describeError(err) {
  * 降级时会带上 `fallback`（人话的失败原因），界面把它显示成一行小字 ——
  * 否则「这回合到底是 AI 说的还是模板说的」在游戏里根本看不出来。
  *
+ * `usedPreset` 只有本地引擎用得上：它决定要不要走 persona.presetReplies
+ * （诱饵预设的专属回应）。远程通道由模型自己接话。
+ *
+ * @param {{persona:object, duel:object, userText:string, usedPreset?:boolean}} ctx
  * @returns {Promise<{reply:string, hitType:string, softspot:object|null, quip:string, source:string, fallback?:string}>}
  */
-export async function generateTurn({ persona, duel, userText }) {
+export async function generateTurn({ persona, duel, userText, usedPreset = false }) {
   const config = resolveConfig();
   if (config.provider !== 'local') {
-    const ctx = { persona, duel, userText };
+    const ctx = { persona, duel, userText, usedPreset };
     try {
       const turn =
         config.provider === 'anthropic'
@@ -473,7 +481,7 @@ export async function generateTurn({ persona, duel, userText }) {
     }
   }
   await sleep(350 + Math.random() * 450);
-  return localTurn({ persona, duel, userText });
+  return localTurn({ persona, duel, userText, usedPreset });
 }
 
 /**

@@ -2,6 +2,7 @@
 // 只验证「不报错 + 界面长出来了」，不测像素。
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
+import { PERSONAS } from '../src/data/personas.js';
 
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const dom = new JSDOM(html, { url: 'http://localhost/', pretendToBeVisual: true });
@@ -24,8 +25,12 @@ const $ = (sel) => window.document.querySelector(sel);
 const $$ = (sel) => [...window.document.querySelectorAll(sel)];
 
 // 1. 选人屏
+// 卡数从数据推导，不写字面量 —— 写死 3 的话，加对手时这里只是把同一个 bug
+// 推到下一次；写死 5 也一样。
 const cards = $$('.persona-card');
-if (cards.length !== 3) fail(`选人屏应该有 3 张卡，实际 ${cards.length}`);
+if (cards.length !== PERSONAS.length) {
+  fail(`选人屏应该有 ${PERSONAS.length} 张卡，实际 ${cards.length}`);
+}
 console.log('✓ 选人屏渲染出', cards.length, '个对手:', $$('.persona-name').map((n) => n.textContent).join(' / '));
 if ($('#engine-badge').textContent !== '本地引擎') fail('徽章文案不对');
 
@@ -58,7 +63,13 @@ if (!/每回合 60 秒/.test($('.diff-note').textContent)) {
 console.log('✓ 难度选择器:', $$('.diff-seg .seg-btn').map((b) => b.textContent).join(' / '));
 
 // 4. 进入对线屏
-cards[1].click(); // 阴阳怪气亲戚
+// 按 data-persona 找卡，不按下标 —— 后面几条断言（3 个预设、破防值 90）都是
+// 亲戚的数据，靠 cards[1] 只是碰巧对上当前数组顺序，往前面插个人设就全错位了，
+// 而报错信息（「三个软肋应该到 90，实际 N」）会把人带偏。
+const cardOf = (id) => cards.find((c) => c.dataset.persona === id);
+const qinqiCard = cardOf('qinqi');
+if (!qinqiCard) fail('选人屏找不到阴阳怪气亲戚（卡片缺 data-persona？）');
+qinqiCard.click();
 if (!$('.duel')) fail('点卡片后没有进入对线屏');
 const diffPill = $('.diff-pill');
 if (!diffPill) fail('对线屏没显示当前难度');

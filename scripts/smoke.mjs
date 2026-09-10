@@ -5,11 +5,15 @@ import {
   createDuel,
   localHitType,
   localJudge,
+  matchSoftspot,
   recordTurn,
   uniqueSoftspotHits,
   stageOf,
   blendDelta,
   clampJudge,
+  JUDGE_MAX,
+  STAGES,
+  TABLE_DELTA,
 } from '../src/lib/duel-engine.js';
 import { MAX_INPUT, clip, stripEmoji } from '../src/lib/text.js';
 import { generateTurn, engineLabel, testConnection } from '../src/lib/llm.js';
@@ -70,16 +74,196 @@ const presetsOnly = await play('qinqi', [
 if (presetsOnly.result !== 'draw') fail('只点预设应该打平，实际 ' + presetsOnly.result);
 if (presetsOnly.breakdown !== 90) fail('只点预设应该正好停在 90，实际 ' + presetsOnly.breakdown);
 
-// 3. 三个软肋各验一次：确认每套预设都能被自己的关键词认出来
+// 2b. 上面那条只验了亲戚。把「只点预设」这条不变量推广到所有对手 ——
+// 老板以前是 94 分，正好是没人盯着它才漏过去的那个。
+// 走 recordTurn（同步、真实结算路径），不经过 generateTurn 的 350~800ms 假思考，
+// 所以 5 个人设一起验也很便宜，还顺带盖住 localJudge 不会把预设的句子改价。
 for (const p of PERSONAS) {
   const duel = createDuel(p);
-  const results = [];
+  const hit = new Set();
+  let presetSum = 0;
   for (const text of p.presets) {
-    const t = await generateTurn({ persona: p, duel, userText: text });
-    results.push(`${text} ${t.hitType === 'softspot' ? '✓' : `✗(${t.hitType})`}`);
+    const spot = matchSoftspot(p, text);
+    if (spot && !hit.has(spot.key)) {
+      hit.add(spot.key);
+      presetSum += spot.delta;
+    }
+    recordTurn(duel, {
+      userText: text,
+      aiReply: '',
+      hitType: localHitType(p, text),
+      quip: '',
+      softspot: spot,
+      usedPreset: true,
+    });
   }
-  console.log(`关键词自检 ${p.name}: ${results.join(' | ')}`);
+  if (duel.breakdown !== presetSum) {
+    fail(`${p.name} 走结算后只点预设是 ${duel.breakdown}，手算 ${presetSum}（localJudge 动了预设的分？）`);
+  }
+  // 只点预设永远赢不了：这是「不找软肋就别想赢」这条设计的底线
+  if (presetSum >= 100) fail(`${p.name} 光点预设就有 ${presetSum} 分，闭着眼都能赢`);
+  // 预设把三个软肋全给的对手（除了带诱饵的甲方），合计必须正好 90
+  if (hit.size === p.softspots.length && presetSum !== 90) {
+    fail(`${p.name} 的预设覆盖了全部软肋，合计应该是 90，实际 ${presetSum}`);
+  }
 }
+console.log(
+  `✓ ${PERSONAS.length} 个对手：只点预设一律到不了 100（全中的那几个正好停在 90）`
+);
+
+// 2c. 甲方（★★★★★）—— 全游戏最难的那个，两条设计都得钉死：
+//     ① 诱饵点了真的白扔一个回合，而且换来的是一句夸奖（笑点在这儿落地）
+//     ② 老老实实找第三个软肋的话，四回合正好破百，且自由文本占两轮 → SSR
+const jiafang = getPersona('jiafang');
+
+const decoyText = '我这就去改，您别生气';
+const decoy = await generateTurn({
+  persona: jiafang,
+  duel: createDuel(jiafang),
+  userText: decoyText,
+  usedPreset: true,
+});
+if (decoy.hitType !== 'miss') fail(`甲方的诱饵「${decoyText}」应该是 miss，实际 ${decoy.hitType}`);
+if (decoy.reply !== jiafang.presetReplies[decoyText]) {
+  fail('诱饵的回应没走 presetReplies，笑点丢了：' + decoy.reply);
+}
+console.log(`✓ 甲方的诱饵：白扔一个回合（miss），换来的是一句「${decoy.reply}」`);
+
+const hard = await play('jiafang', [
+  '这个需求写进合同了吗？',
+  '预算是多少？',
+  '您能给我个参考吗？',
+  '但是您得先告诉我这个需求到底要什么',
+], '★★★★★ 的最难路径', 2);
+if (hard.result !== 'win') fail('甲方的正确打法应该能赢，实际 ' + hard.result);
+if (hard.breakdown !== 100) fail('甲方这条路应该正好破百，实际 ' + hard.breakdown);
+if (hard.rounds.length !== 4) fail('甲方这条路应该是四回合，实际 ' + hard.rounds.length);
+if (hard.freeTextRounds !== 2) fail('甲方这条路应该有两次是自己打的字，实际 ' + hard.freeTextRounds);
+if (pickTitle(hard).id !== 'swift') {
+  fail('自己找出三个软肋赢下来该给 SSR，实际 ' + pickTitle(hard).id);
+}
+console.log('✓ 最难的对手自己找软肋赢下来 → SSR「' + pickTitle(hard).name + '」');
+
+/* ------------------------------------------------------------------ */
+/* 3. 人设数据自检                                                      */
+/*                                                                     */
+/* 这一段以前只 console.log，关键词改坏了、预设命不中软肋，测试照样全绿  */
+/* 退出 0 —— 它恰好是唯一能拦住「关键词过宽 / 软肋配平错了」的地方。      */
+/* 现在写成硬断言：加一个新对手，这里必须全过。                          */
+/* ------------------------------------------------------------------ */
+
+const STAGE_KEYS = STAGES.filter((s) => s.id !== 'breakdown').map((s) => s.id);
+
+for (const p of PERSONAS) {
+  const who = `人设 ${p.name}(${p.id})`;
+
+  // 星级：main.js 里是 '★'.repeat(difficulty) + '☆'.repeat(5 - difficulty)，
+  // repeat 对负数抛 RangeError —— 星级写错一个数字就能让选人屏白屏
+  if (!Number.isInteger(p.difficulty) || p.difficulty < 1 || p.difficulty > 5) {
+    fail(`${who} 的星级应该是 1~5 的整数，实际 ${p.difficulty}`);
+  }
+
+  for (const field of ['name', 'avatar', 'tagline', 'intro', 'opener']) {
+    if (!String(p[field] || '').trim()) fail(`${who} 的 ${field} 是空的`);
+  }
+  if (!Array.isArray(p.catchphrases) || p.catchphrases.length === 0) {
+    fail(`${who} 没有口头禅（llm.js 会 catchphrases.join）`);
+  }
+  if (!Array.isArray(p.breakdown) || p.breakdown.length === 0) {
+    fail(`${who} 没有破防台词（main.js 会遍历 breakdown）`);
+  }
+  for (const key of STAGE_KEYS) {
+    if (!Array.isArray(p.stages?.[key]) || p.stages[key].length === 0) {
+      fail(`${who} 缺 ${key} 阶段的台词`);
+    }
+  }
+
+  // README 承诺的是「2–3 个软肋」，所以是 >= 2 而不是 === 3
+  if (!Array.isArray(p.softspots) || p.softspots.length < 2) {
+    fail(`${who} 的软肋少于 2 个`);
+  }
+  const keys = p.softspots.map((s) => s.key);
+  if (new Set(keys).size !== keys.length) fail(`${who} 有重复的软肋 key：${keys.join(', ')}`);
+
+  const words = new Map();
+  for (const spot of p.softspots) {
+    // 软肋没台词会静默降级到 stages[stage.id]（llm.js 的 ||），出问题看不出来
+    const reactions = p.softspotReactions?.[spot.key];
+    if (!Array.isArray(reactions) || reactions.length === 0) {
+      fail(`${who} 的软肋 ${spot.key} 没有对应的反应台词`);
+    }
+    if (!Number.isFinite(spot.delta) || spot.delta <= 0) fail(`${who} 的 ${spot.key} delta 非法`);
+    // 同一个人的两个软肋不能共用一个关键词（跨人设可以，匹配是按人设走的）
+    for (const kw of spot.keywords) {
+      if (words.has(kw)) fail(`${who} 的关键词「${kw}」同时属于 ${words.get(kw)} 和 ${spot.key}`);
+      words.set(kw, spot.key);
+    }
+  }
+  // 配平：< 100 才能保证「只点预设打平」，+12 >= 100 才能保证「找齐三个再补一句」赢
+  const sum = p.softspots.reduce((a, s) => a + s.delta, 0);
+  if (sum < 88 || sum > 99) {
+    fail(`${who} 的软肋合计 ${sum}，必须落在 88~99（<100 才不会只点预设就赢，+12 要能破百）`);
+  }
+  if (sum !== 90) {
+    fail(`${who} 的软肋合计是 ${sum}，demo 配平要求正好 90（三个预设刚好 90、补一句破百）`);
+  }
+
+  // 预设：每个都得有用，且不能两个预设撞同一个软肋
+  // （同一个软肋连点会触发减半，合计只剩 2d，90 的配平直接崩）
+  const spotOf = new Map();
+  for (const text of p.presets) {
+    const spot = matchSoftspot(p, text);
+    const label = spot ? spot.key : localHitType(p, text);
+    if (spot) {
+      if (spotOf.has(spot.key)) fail(`${who} 的两个预设都命中 ${spot.key}：${spotOf.get(spot.key)} / ${text}`);
+      spotOf.set(spot.key, text);
+    }
+    console.log(`  预设 ${p.name}: ${text} → ${spot ? `${spot.key} +${spot.delta}` : label}`);
+  }
+  // 至少 2 个预设是真软肋 —— 甲方的诱饵是故意留的（★★★★★ 得真难）
+  if (spotOf.size < 2) fail(`${who} 只有 ${spotOf.size} 个预设命中软肋，至少要 2 个`);
+  // 诱饵必须真的是无效输出，不能悄悄变成有效输出白送 12 分
+  for (const text of p.presets) {
+    if (!matchSoftspot(p, text) && localHitType(p, text) !== 'miss') {
+      fail(`${who} 的诱饵预设「${text}」应该是 miss，实际 ${localHitType(p, text)}`);
+    }
+  }
+  console.log(`✓ ${who} 数据自检通过（软肋 ${sum} 分 / 预设命中 ${spotOf.size} 个）`);
+}
+
+// id 唯一：getPersona 返回第一个匹配，重复 id 会让后面那个人设永远选不到
+const ids = PERSONAS.map((p) => p.id);
+if (new Set(ids).size !== ids.length) fail('有重复的人设 id：' + ids.join(', '));
+
+/* 复现句探针表。
+ *
+ * 「关键词过宽」这类 bug 没有任何通用断言能抓住 —— '好的'、'我请' 单独看都是
+ * 合理的关键词，错的是行为。这张表是唯一的防线，也是给下一个写人设的人的说明书。
+ * 格式：[人设 id, 玩家说, 期望命中的软肋 key（null = 不该算软肋）]
+ */
+const PROBES = [
+  ['wangyou', '好的，那你解释一下你的逻辑', 'logic'], // 不是 shutup
+  ['wangyou', '我要截图发群里', 'screenshot'],
+  ['wangyou', '你说得对', 'shutup'],
+  // 这条专门盯 '好的' 有没有被人改回去。「好的，那你解释一下你的逻辑」有 '逻辑'
+  // 兜着，软肋顺序一调就对了，单靠它拦不住重新放宽；这句没有第二个关键词。
+  ['wangyou', '好的，我先说两句', null],
+  ['qinqi', '我请问你凭什么', null], // '我请' 不该吃掉这句话
+  ['qinqi', '给您添麻烦了', null], // '给您' 同上
+  ['qinqi', '您来我家吃饭', null], // '您来' 同上
+  ['qinqi', '您家孩子现在在哪儿高就啊？', 'kid'],
+  ['jiafang', '我这就去改，您别生气', null], // 诱饵
+  ['jiafang', '这个需求写进合同了吗？', 'contract'],
+];
+for (const [id, text, expect] of PROBES) {
+  const p = getPersona(id);
+  if (!p) fail(`探针表引用了不存在的人设：${id}`);
+  const actual = matchSoftspot(p, text)?.key ?? null;
+  if (actual !== expect) {
+    fail(`探针失败「${text}」：期望 ${expect ?? '不算软肋'}，实际 ${actual ?? '不算软肋'}`);
+  }
+}
+console.log(`✓ 复现句探针 ${PROBES.length} 条全过（关键词过宽这类 bug 只能靠它拦）`);
 
 // 4. 骂人两次应该自爆判负
 await play('laoban', ['你懂个屁', '你就是个废物'], '自爆路径');
@@ -327,8 +511,10 @@ console.log('✓ clip 按上限裁剪，不会把 emoji 劈成半个');
 const judgePersona = getPersona('qinqi');
 
 // 判断分等于查表值时，结果必须原样等于查表值 ——
-// 老数值（软肋 32/28/30、hit 12、自爆 −12）全靠这条才没走样
-for (const t of [34, 32, 30, 12, 0, -12]) {
+// 老数值（软肋 32/28/30、hit 12、自爆 −12）全靠这条才没走样。
+// 样本从人设数据推导，别写死：写死的话改了配平它就悄悄过期了
+const deltas = [...new Set(PERSONAS.flatMap((p) => p.softspots.map((s) => s.delta)))];
+for (const t of [...deltas, TABLE_DELTA.hit, TABLE_DELTA.miss, TABLE_DELTA.self_destruct]) {
   if (blendDelta(t, t) !== t) fail(`判断分跟查表值一致时应该原样保留 ${t}，实际 ${blendDelta(t, t)}`);
 }
 // 20% 真的在起作用：同样一个 hit，判断分高低给出不同的增量
@@ -425,3 +611,40 @@ if (remoteTurn.record.tableDelta !== 12 || remoteTurn.record.judgeDelta !== 30) 
 }
 if (remoteTurn.delta !== 16) fail('查表 12、判断 30 应该得 16，实际 ' + remoteTurn.delta);
 console.log('✓ 结算记录里留着两半（查表 +12 / 判断 +30），合起来 +16');
+
+/* ------------------------------------------------------------------ */
+/* 9. 赛后称号                                                          */
+/*                                                                     */
+/* SSR 那条分支以前读的是 duel.softspotHits —— createDuel 从来没设过，  */
+/* 于是谁都拿不到，而没测试盯着，它就那么死了很久。                      */
+/* ------------------------------------------------------------------ */
+
+const fakeDuel = (result, rounds, spots, freeText) => ({
+  result,
+  rounds: Array.from({ length: rounds }, () => ({})),
+  softspotKeys: Array.from({ length: spots }, (_, i) => `k${i}`),
+  freeTextRounds: freeText,
+});
+
+const titleCases = [
+  ['win', 4, 3, 2, 'swift', '四轮内三个软肋全靠自己找'],
+  ['win', 4, 3, 3, 'swift', '四轮内全自己打'],
+  ['win', 4, 3, 1, 'master', '标准演示路径（3 预设 + 1 句自己的话）'],
+  ['win', 5, 3, 3, 'master', '五轮才赢（条件是四轮之内）'],
+  ['win', 6, 3, 3, 'master', '拖太久'],
+  ['lose', 2, 0, 0, 'countered', '自爆两次'],
+  ['draw', 8, 3, 0, 'scripted', '全程照预设念'],
+  ['draw', 8, 1, 4, 'stubborn', '八轮没破防但说了自己的话'],
+];
+for (const [result, rounds, spots, freeText, expect, why] of titleCases) {
+  const actual = pickTitle(fakeDuel(result, rounds, spots, freeText)).id;
+  if (actual !== expect) fail(`称号「${why}」应该是 ${expect}，实际 ${actual}`);
+}
+console.log(`✓ 称号判定 ${titleCases.length} 种情形全对（SSR 现在可达，且只给真自己找软肋的）`);
+
+// 三轮内破不了百，所以 rounds <= 3 那个旧条件本来就是死路 —— 把这个事实钉住，
+// 免得以后有人觉得「四轮」太宽松，又把它改回去
+const best3 = [...deltas].sort((a, b) => b - a).slice(0, 3)
+  .reduce((sum, d) => sum + blendDelta(d, JUDGE_MAX), 0);
+if (best3 >= 100) fail(`三轮上限居然能破百（${best3}），称号条件可以收紧了`);
+console.log(`✓ 三个软肋、判断分拉满，三轮上限只有 ${best3} < 100 ——「三轮之内」确实不可能`);

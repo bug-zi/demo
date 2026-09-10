@@ -177,6 +177,8 @@ function personaCard(persona) {
     {
       class: 'persona-card',
       type: 'button',
+      // 给测试用的抓手：卡片顺序会随人设增减变，按 id 选才不会选错对手
+      'data-persona': persona.id,
       onclick: () => startDuel(persona.id),
     },
     h(
@@ -432,7 +434,12 @@ async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
 
   let turn;
   try {
-    turn = await generateTurn({ persona: state.duel.persona, duel: state.duel, userText });
+    turn = await generateTurn({
+      persona: state.duel.persona,
+      duel: state.duel,
+      userText,
+      usedPreset: Boolean(preset),
+    });
   } catch (err) {
     console.error('[杠精陪练房] 生成失败：', err);
     turn = { reply: '……', hitType: 'miss', quip: '', softspot: null };
