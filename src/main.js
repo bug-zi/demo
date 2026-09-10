@@ -19,8 +19,10 @@ import {
   stageOf,
   uniqueSoftspotHits,
 } from './lib/duel-engine.js';
-import { engineLabel, generateTurn } from './lib/llm.js';
+import { engineLabel, generateTurn, isRemote } from './lib/llm.js';
 import { blip, isSoundEnabled, setSoundEnabled } from './lib/audio.js';
+import { h } from './lib/dom.js';
+import { openSettings } from './ui/settings-dialog.js';
 
 const screenEl = document.getElementById('screen');
 
@@ -38,23 +40,6 @@ const refs = {};
 /* ------------------------------------------------------------------ */
 /* DOM 小工具                                                          */
 /* ------------------------------------------------------------------ */
-
-function h(tag, props = {}, ...children) {
-  const node = document.createElement(tag);
-  for (const [key, value] of Object.entries(props)) {
-    if (value === null || value === undefined || value === false) continue;
-    if (key === 'class') node.className = value;
-    else if (key === 'text') node.textContent = value;
-    else if (key.startsWith('on') && typeof value === 'function') {
-      node.addEventListener(key.slice(2).toLowerCase(), value);
-    } else node.setAttribute(key, value);
-  }
-  for (const child of children.flat()) {
-    if (child === null || child === undefined || child === false) continue;
-    node.append(typeof child === 'string' ? document.createTextNode(child) : child);
-  }
-  return node;
-}
 
 function scrollLogToBottom() {
   if (!refs.log) return;
@@ -96,6 +81,22 @@ function viewSelect() {
     h('p', {
       class: 'footnote',
       text: '每个人都有软肋，藏着的那种。但话说太冲，先破防的可能是你自己。',
+    }),
+    isRemote() ? null : connectHint(),
+  );
+}
+
+/** 没配 AI 时，在选人屏底部再提一句 —— 顶栏那个齿轮太容易被忽略。 */
+function connectHint() {
+  return h(
+    'div',
+    { class: 'connect-hint' },
+    h('span', { text: '对手现在只会背台词。' }),
+    h('button', {
+      class: 'hint-btn',
+      type: 'button',
+      text: '接入你的 AI →',
+      onclick: openSettingsDialog,
     }),
   );
 }
@@ -271,6 +272,14 @@ function bubbleMe(text) {
   return h('div', { class: 'row row-me' }, h('div', { class: 'bubble bubble-me', text }));
 }
 
+/** 远程 AI 掉线时的提示：明说是本地台词，不然玩家分不清这局到底谁在说话。 */
+function fallbackLine(reason) {
+  return h('div', { class: 'fallback-line' },
+    h('span', { class: 'fallback-tag', text: '本地兜底' }),
+    h('span', { text: `真实 AI 没接上：${reason}` }),
+  );
+}
+
 function quipLine(round) {
   const sign = round.delta > 0 ? '+' : '';
   return h(
@@ -334,6 +343,7 @@ async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
   });
 
   refs.log.append(bubbleAI(turn.reply));
+  if (turn.fallback) refs.log.append(fallbackLine(turn.fallback));
   refs.log.append(quipLine(record));
   updateAngerUI();
   scrollLogToBottom();
@@ -409,19 +419,32 @@ function startTimer() {
   stopTimer();
   state.secondsLeft = ROUND_SECONDS;
   paintTimer();
-  state.timerId = setInterval(() => {
-    state.secondsLeft -= 1;
-    paintTimer();
-    if (state.secondsLeft <= 0) {
-      stopTimer();
-      submitTurn('', { timeout: true });
-    }
-  }, 1000);
+  state.timerId = setInterval(tick, 1000);
+}
+
+function tick() {
+  state.secondsLeft -= 1;
+  paintTimer();
+  if (state.secondsLeft <= 0) {
+    stopTimer();
+    submitTurn('', { timeout: true });
+  }
 }
 
 function stopTimer() {
   if (state.timerId) clearInterval(state.timerId);
   state.timerId = null;
+}
+
+/** 打开设置弹窗时暂停倒计时 —— 保留 secondsLeft，别偷偷给玩家回满 30 秒。 */
+function pauseTimer() {
+  stopTimer();
+}
+
+function resumeTimer() {
+  if (state.timerId) return;
+  if (state.screen !== 'duel' || !state.duel || state.duel.result) return;
+  state.timerId = setInterval(tick, 1000);
 }
 
 function paintTimer() {
@@ -617,9 +640,28 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
 /* 顶栏                                                                */
 /* ------------------------------------------------------------------ */
 
-function wireTopbar() {
+function repaintEngine() {
   const badge = document.getElementById('engine-badge');
   if (badge) badge.textContent = engineLabel();
+}
+
+function openSettingsDialog() {
+  openSettings({
+    onPause: pauseTimer,
+    onResume: resumeTimer,
+    onChange: () => {
+      repaintEngine();
+      // 只有停在选人屏时才重绘 —— 对线中途重绘会清掉聊天记录
+      if (state.screen === 'select') render();
+    },
+  });
+}
+
+function wireTopbar() {
+  repaintEngine();
+
+  // 注意：这段必须在下面 sound-toggle 的早退之前，否则声音按钮缺失会连带跳过设置按钮
+  document.getElementById('settings-btn')?.addEventListener('click', openSettingsDialog);
 
   const toggle = document.getElementById('sound-toggle');
   if (!toggle) return;
