@@ -118,9 +118,80 @@ if ($('#engine-badge').textContent !== '本地引擎') fail('清除后徽章应�
 if (window.localStorage.getItem('gang-ai:settings:v1')) fail('清除后 localStorage 应该被删掉');
 console.log('✓ 清除后徽章:', $('#engine-badge').textContent);
 
+// 外观：弹窗里也能切主题
+const themeSeg = $$('.theme-seg-btn');
+if (themeSeg.length !== 2) fail(`外观应该有 2 个选项，实际 ${themeSeg.length}`);
+const themeBeforeSeg = document.documentElement.dataset.theme;
+themeSeg[0].click();
+if (document.documentElement.dataset.theme !== 'light') fail('点浅色应切到 light');
+themeSeg[1].click();
+if (document.documentElement.dataset.theme !== 'dark') fail('点深色应切到 dark');
+themeSeg[themeBeforeSeg === 'dark' ? 1 : 0].click(); // 恢复原主题
+console.log('✓ 设置弹窗外观切换正常');
+
 $('.modal-head .ghost-btn').click();
 if ($('.modal')) fail('点 ✕ 应该关掉弹窗');
 console.log('✓ 弹窗关闭');
+
+/* ------------------------------------------------------------------ */
+/* 6. 主题：顶栏切换 + localStorage 记忆                                */
+/* ------------------------------------------------------------------ */
+
+const themeBtn = $('#theme-toggle');
+if (!themeBtn) fail('顶栏没有主题按钮');
+const themeBefore = document.documentElement.dataset.theme;
+if (themeBefore !== 'light' && themeBefore !== 'dark') {
+  fail(`初始主题应为 light/dark，实际「${themeBefore}」`);
+}
+themeBtn.click();
+const themeAfter = document.documentElement.dataset.theme;
+if (themeAfter === themeBefore) fail('点击主题按钮后 data-theme 应该翻转');
+if (window.localStorage.getItem('gang-ai:theme') !== themeAfter) {
+  fail('主题选择应写入 localStorage');
+}
+themeBtn.click();
+if (document.documentElement.dataset.theme !== themeBefore) fail('再点一次应切回原主题');
+console.log('✓ 主题切换:', themeBefore, '→', themeAfter, '→', themeBefore);
+
+/* ------------------------------------------------------------------ */
+/* 7. 皮肤：状态层 + 选择弹层 + 与深浅解耦                              */
+/* ------------------------------------------------------------------ */
+
+const { getSkin, setSkin } = await import('../src/lib/theme.js');
+if (getSkin() !== 'blossom') fail(`默认皮肤应为 blossom，实际「${getSkin()}」`);
+setSkin('midnight');
+if (document.documentElement.dataset.skin !== 'midnight') fail('setSkin 应设置 data-skin');
+if (window.localStorage.getItem('gang-ai:skin') !== 'midnight') fail('皮肤选择应写入 localStorage');
+setSkin('blossom');
+if (document.documentElement.dataset.skin !== 'blossom') fail('应能切回 blossom');
+console.log('✓ 皮肤状态层：默认/切换/持久化');
+
+const skinBtn = $('#skin-btn');
+if (!skinBtn) fail('顶栏没有皮肤按钮');
+skinBtn.click();
+const skinPop = $('.skin-popover');
+if (!skinPop) fail('点皮肤按钮没弹层');
+const skinCards = $$('.skin-card');
+if (skinCards.length !== 2) fail(`皮肤卡应有 2 张，实际 ${skinCards.length}`);
+const midnightCard = skinCards.find((c) => c.dataset.skinId === 'midnight');
+if (!midnightCard) fail('没有午夜皮肤卡');
+midnightCard.click();
+if (document.documentElement.dataset.skin !== 'midnight') fail('点卡应切到 midnight');
+if (!$('.skin-popover')) fail('点卡后弹层应保持打开（便于对比切换）');
+if ($('.skin-card.is-active').dataset.skinId !== 'midnight') fail('active 卡应随切换更新');
+
+// 解耦：midnight 下主题按钮仍可切深浅
+const themeBefore2 = document.documentElement.dataset.theme;
+$('#theme-toggle').click();
+if (document.documentElement.dataset.theme === themeBefore2) fail('midnight 下主题按钮应仍可切换');
+$('#theme-toggle').click();
+
+// 切回 blossom 并用 Esc 关闭
+skinCards.find((c) => c.dataset.skinId === 'blossom').click();
+if (document.documentElement.dataset.skin !== 'blossom') fail('应切回 blossom');
+document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }));
+if ($('.skin-popover')) fail('Esc 应关闭皮肤弹层');
+console.log('✓ 皮肤弹层：两卡切换/解耦/高亮更新/Esc 关闭');
 
 console.log('\n全部通过 ✅');
 process.exit(0);

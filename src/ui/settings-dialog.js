@@ -11,6 +11,7 @@ import { PROVIDER_OPTIONS, presetList } from '../data/providers.js';
 import { loadSettings, saveSettings, clearSettings, maskKey } from '../lib/settings.js';
 import { testConnection } from '../lib/llm.js';
 import { blip } from '../lib/audio.js';
+import { applyTheme, onTheme } from '../lib/theme.js';
 
 const HINTS = Object.fromEntries(PROVIDER_OPTIONS.map((p) => [p.id, p.hint]));
 
@@ -244,6 +245,7 @@ export function openSettings({ onPause, onResume, onChange } = {}) {
   };
 
   function close() {
+    offTheme();
     document.removeEventListener('keydown', onKeydown);
     backdrop.remove();
     onResume?.();
@@ -267,10 +269,16 @@ export function openSettings({ onPause, onResume, onChange } = {}) {
         h('button', {
           class: 'ghost-btn',
           type: 'button',
-          text: '✕',
           'aria-label': '关闭',
           onclick: close,
-        }),
+        }, h('span', { class: 'icon i-close', 'aria-hidden': 'true' })),
+      ),
+      h('div', { class: 'field' },
+        h('span', { class: 'field-label', text: '外观' }),
+        h('div', { class: 'theme-seg' },
+          h('button', { class: 'theme-seg-btn', type: 'button', text: '浅色', onclick: () => applyTheme('light') }),
+          h('button', { class: 'theme-seg-btn', type: 'button', text: '深色', onclick: () => applyTheme('dark') }),
+        ),
       ),
       body,
       status,
@@ -283,6 +291,15 @@ export function openSettings({ onPause, onResume, onChange } = {}) {
       ),
     ),
   );
+
+  const offTheme = onTheme((theme) => {
+    backdrop.querySelectorAll('.theme-seg-btn').forEach((btn) => {
+      btn.classList.toggle(
+        'is-active',
+        btn.textContent === (theme === 'light' ? '浅色' : '深色'),
+      );
+    });
+  });
 
   document.body.append(backdrop);
   document.addEventListener('keydown', onKeydown);

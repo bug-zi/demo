@@ -23,6 +23,8 @@ import { engineLabel, generateTurn, isRemote } from './lib/llm.js';
 import { blip, isSoundEnabled, setSoundEnabled } from './lib/audio.js';
 import { h } from './lib/dom.js';
 import { openSettings } from './ui/settings-dialog.js';
+import { toggleSkinPopover } from './ui/skin-popover.js';
+import { initTheme, initSkin, toggleTheme, onTheme } from './lib/theme.js';
 
 const screenEl = document.getElementById('screen');
 
@@ -112,15 +114,19 @@ function personaCard(persona) {
     h(
       'div',
       { class: 'persona-top' },
-      h('span', { class: 'persona-avatar', text: persona.avatar }),
+      h('span', { class: 'avatar' },
+        h('span', { class: `icon i-${persona.avatar}`, 'aria-hidden': 'true' }),
+      ),
       h(
         'div',
         { class: 'persona-id' },
         h('div', { class: 'persona-name', text: persona.name }),
-        h('div', {
-          class: 'persona-stars',
-          text: '★'.repeat(persona.difficulty) + '☆'.repeat(5 - persona.difficulty),
-        }),
+        h('div', { class: 'persona-stars', 'aria-label': `难度 ${persona.difficulty}/5` },
+          ...Array.from({ length: persona.difficulty }, () =>
+            h('span', { class: 'icon i-star', 'aria-hidden': 'true' })),
+          ...Array.from({ length: 5 - persona.difficulty }, () =>
+            h('span', { class: 'icon i-star star-dim', 'aria-hidden': 'true' })),
+        ),
       ),
     ),
     h('p', { class: 'persona-tagline', text: `「${persona.tagline}」` }),
@@ -156,7 +162,11 @@ function viewDuel() {
     refs.log.append(quipLine(round));
   }
 
-  refs.angerFill = h('div', { class: 'anger-fill', style: `width:${duel.anger}%` });
+  refs.angerFill = h('div', {
+    class: 'anger-fill',
+    'data-stage': stage.id,
+    style: `width:${duel.anger}%`,
+  });
   refs.angerNum = h('span', { class: 'anger-num', text: String(duel.anger) });
   refs.stagePill = h('span', {
     class: `stage-pill stage-${stage.id}`,
@@ -219,7 +229,9 @@ function viewDuel() {
       h(
         'div',
         { class: 'duel-who' },
-        h('span', { class: 'persona-avatar small', text: persona.avatar }),
+        h('span', { class: 'avatar small' },
+          h('span', { class: `icon i-${persona.avatar}`, 'aria-hidden': 'true' }),
+        ),
         h('div', {},
           h('div', { class: 'persona-name', text: persona.name }),
           h('div', { class: 'persona-tagline small', text: `「${persona.tagline}」` }),
@@ -263,7 +275,9 @@ function bubbleAI(text) {
   return h(
     'div',
     { class: 'row row-ai' },
-    h('span', { class: 'avatar-bubble', text: duel.persona.avatar }),
+    h('span', { class: 'avatar small' },
+      h('span', { class: `icon i-${duel.persona.avatar}`, 'aria-hidden': 'true' }),
+    ),
     h('div', { class: 'bubble bubble-ai', text }),
   );
 }
@@ -282,10 +296,16 @@ function fallbackLine(reason) {
 
 function quipLine(round) {
   const sign = round.delta > 0 ? '+' : '';
+  const tagIcon =
+    round.hitType === 'softspot'
+      ? h('span', { class: 'icon i-target', 'aria-hidden': 'true' })
+      : round.hitType === 'self_destruct'
+        ? h('span', { class: 'icon i-bolt', 'aria-hidden': 'true' })
+        : null;
   return h(
     'div',
     { class: `quip quip-${round.hitType}` },
-    h('span', { class: 'quip-tag', text: HIT_LABELS[round.hitType] || '回合' }),
+    h('span', { class: 'quip-tag' }, tagIcon, HIT_LABELS[round.hitType] || '回合'),
     h('span', { class: 'quip-text', text: `${round.quip || ''} ${sign}${round.delta}` }),
   );
 }
@@ -316,7 +336,9 @@ async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
   blip('send');
 
   const typing = h('div', { class: 'row row-ai' },
-    h('span', { class: 'avatar-bubble', text: state.duel.persona.avatar }),
+    h('span', { class: 'avatar small' },
+      h('span', { class: `icon i-${state.duel.persona.avatar}`, 'aria-hidden': 'true' }),
+    ),
     h('div', { class: 'bubble bubble-ai typing' }, h('i'), h('i'), h('i')),
   );
   refs.log.append(typing);
@@ -383,7 +405,7 @@ function updateAngerUI() {
     refs.stagePill.textContent = stage.label;
     refs.stagePill.className = `stage-pill stage-${stage.id}`;
   }
-  if (refs.angerFill) refs.angerFill.style.background = stage.color;
+  if (refs.angerFill) refs.angerFill.dataset.stage = stage.id;
 }
 
 async function finish(result) {
@@ -490,7 +512,12 @@ function viewReport() {
     h(
       'div',
       { class: 'stats' },
-      stat('对手', `${duel.persona.avatar} ${duel.persona.name}`),
+      stat('对手', [
+      h('span', { class: 'avatar inline', 'aria-hidden': 'true' },
+        h('span', { class: `icon i-${duel.persona.avatar}` }),
+      ),
+      ` ${duel.persona.name}`,
+    ]),
       stat('回合数', `${duel.rounds.length} / ${MAX_ROUNDS}`),
       stat('软肋命中', `${hits} / ${duel.persona.softspots.length}`),
       stat('自爆次数', `${duel.selfDestructs} / ${MAX_SELF_DESTRUCTS}`),
@@ -510,6 +537,11 @@ function viewReport() {
           h(
             'div',
             { class: `replay-tag tag-${round.hitType}` },
+            round.hitType === 'softspot'
+              ? h('span', { class: 'icon i-target', 'aria-hidden': 'true' })
+              : round.hitType === 'self_destruct'
+                ? h('span', { class: 'icon i-bolt', 'aria-hidden': 'true' })
+                : null,
             `${HIT_LABELS[round.hitType] || '回合'} ${round.delta > 0 ? '+' : ''}${round.delta}`,
           ),
         ),
@@ -530,7 +562,7 @@ function stat(label, value) {
     'div',
     { class: 'stat' },
     h('span', { class: 'stat-label', text: label }),
-    h('span', { class: 'stat-value', text: value }),
+    h('span', { class: 'stat-value' }, value),
   );
 }
 
@@ -558,33 +590,45 @@ function exportCard() {
   const ctx = canvas.getContext('2d');
   ctx.scale(2, 2);
 
-  ctx.fillStyle = '#12100E';
+  // 跟着当前主题走：颜色全部读 CSS 令牌，别在这里再写死一套
+  const css = getComputedStyle(document.documentElement);
+  const token = (name) => css.getPropertyValue(name).trim();
+  const C = {
+    bg: token('--canvas-bg'),
+    bar: token('--stage-breakdown'),
+    muted: token('--muted'),
+    text: token('--text'),
+    card: token('--surface-deep'),
+    rank: token('--accent-strong'),
+  };
+
+  ctx.fillStyle = C.bg;
   ctx.fillRect(0, 0, W, H);
 
-  ctx.fillStyle = '#FF4D4D';
+  ctx.fillStyle = C.bar;
   ctx.fillRect(0, 0, W, 8);
 
-  ctx.fillStyle = '#8A8078';
+  ctx.fillStyle = C.muted;
   ctx.font = '20px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
   ctx.fillText('杠精陪练房 · GANG.AI', 60, 90);
 
-  ctx.fillStyle = '#EDEDED';
+  ctx.fillStyle = C.text;
   ctx.font = 'bold 56px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
   ctx.fillText(copy.headline, 60, 190);
 
-  ctx.fillStyle = '#8A8078';
+  ctx.fillStyle = C.muted;
   ctx.font = '24px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
   ctx.fillText(`对手：${duel.persona.name}`, 60, 240);
 
-  ctx.fillStyle = '#26221E';
+  ctx.fillStyle = C.card;
   ctx.fillRect(60, 290, W - 120, 190);
-  ctx.fillStyle = '#FFD24A';
+  ctx.fillStyle = C.rank;
   ctx.font = 'bold 22px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
   ctx.fillText(title.rank, 90, 340);
-  ctx.fillStyle = '#EDEDED';
+  ctx.fillStyle = C.text;
   ctx.font = 'bold 40px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
   ctx.fillText(title.name, 90, 395);
-  ctx.fillStyle = '#8A8078';
+  ctx.fillStyle = C.muted;
   ctx.font = '20px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
   wrapText(ctx, title.desc, 90, 435, W - 220, 28);
 
@@ -597,14 +641,14 @@ function exportCard() {
   let y = 550;
   ctx.font = '24px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
   for (const [label, value] of rows) {
-    ctx.fillStyle = '#8A8078';
+    ctx.fillStyle = C.muted;
     ctx.fillText(label, 60, y);
-    ctx.fillStyle = '#EDEDED';
+    ctx.fillStyle = C.text;
     ctx.fillText(value, 300, y);
     y += 52;
   }
 
-  ctx.fillStyle = '#8A8078';
+  ctx.fillStyle = C.muted;
   ctx.font = '20px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
   wrapText(ctx, '软肋这东西，人人都有一根。', 60, 880, W - 120, 30);
   ctx.fillText(`引擎：${engineLabel()}`, 60, 950);
@@ -663,11 +707,35 @@ function wireTopbar() {
   // 注意：这段必须在下面 sound-toggle 的早退之前，否则声音按钮缺失会连带跳过设置按钮
   document.getElementById('settings-btn')?.addEventListener('click', openSettingsDialog);
 
+  const skinBtn = document.getElementById('skin-btn');
+  skinBtn?.addEventListener('click', () => toggleSkinPopover(skinBtn));
+
+  const themeBtn = document.getElementById('theme-toggle');
+  themeBtn?.addEventListener('click', toggleTheme);
+  onTheme((theme) => {
+    if (!themeBtn) return;
+    // 浅色时显示月亮（下一步去深色），深色时显示太阳
+    themeBtn.replaceChildren(
+      h('span', {
+        class: `icon ${theme === 'light' ? 'i-dark_mode' : 'i-light_mode'}`,
+        'aria-hidden': 'true',
+      }),
+    );
+    themeBtn.setAttribute(
+      'aria-label',
+      theme === 'light' ? '切换到深色主题' : '切换到浅色主题',
+    );
+  });
+
   const toggle = document.getElementById('sound-toggle');
   if (!toggle) return;
   const paint = () => {
-    toggle.textContent = isSoundEnabled() ? '🔊 声音' : '🔇 声音';
-    toggle.setAttribute('aria-pressed', String(isSoundEnabled()));
+    const on = isSoundEnabled();
+    toggle.replaceChildren(
+      h('span', { class: `icon ${on ? 'i-volume_up' : 'i-volume_off'}`, 'aria-hidden': 'true' }),
+      document.createTextNode('声音'),
+    );
+    toggle.setAttribute('aria-pressed', String(on));
   };
   toggle.addEventListener('click', () => {
     setSoundEnabled(!isSoundEnabled());
@@ -677,5 +745,7 @@ function wireTopbar() {
   paint();
 }
 
+initTheme();
+initSkin();
 wireTopbar();
 render();

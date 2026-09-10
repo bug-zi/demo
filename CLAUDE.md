@@ -52,15 +52,20 @@ Copy `.env.example` to `.env.local` and set `VITE_LLM_API_KEY` to enable the rem
 
 ## Architecture
 
-- `index.html` is the application shell. It owns the top bar, engine badge, sound toggle, and empty `#screen` mount point; `src/main.js` is the module entry point.
+- `index.html` is the application shell. It owns the top bar, engine badge, skin picker, theme toggle, sound toggle, and empty `#screen` mount point; `src/main.js` is the module entry point. A small inline script in `<head>` applies the persisted/system theme and skin before first paint to avoid a flash of the wrong look.
 - `src/main.js` is both the UI state machine and renderer. The main states are `select`, `duel`, and `report`. `render()` clears and rebuilds the active view with the local `h()` DOM helper. Event handlers mutate the shared `state`, and the duel view keeps references to nodes that need incremental updates (anger bar, timer, log, input, etc.). Model/user text is rendered through `textContent`/DOM nodes rather than HTML strings.
 - `src/lib/duel-engine.js` is the deterministic rules layer. `createDuel()` creates per-game state; `localHitType()` and `matchSoftspot()` classify input; `recordTurn()` applies the authoritative anger delta, repeat-softspot diminishing returns, counters, and round record; `judge()` determines `win`, `lose`, or `draw`. Keep numerical game rules here rather than in the model/UI layer.
 - `src/lib/llm.js` is the generation adapter. `generateTurn()` exposes one common return shape (`reply`, `hitType`, `softspot`, `quip`, `source`) to the UI. The local path uses deterministic rules plus persona templates; the optional remote path dynamically imports `@anthropic-ai/sdk`, sends recent history and a JSON schema, validates the returned `hitType`, and falls back locally on errors. The model suggests a hit type, but `recordTurn()` remains authoritative for anger values.
 - `src/data/personas.js` is the content/configuration layer for the three opponents. Each persona contains identity text, presets, softspot keyword definitions/deltas, stage replies, softspot reactions, and breakdown lines. Add or edit opponents here rather than hard-coding persona behavior in the renderer.
 - `src/data/fallbacks.js` contains hit labels/quips, generic local replies, self-destruct reactions, silence text, and the `pick()` helper. `src/data/titles.js` maps completed duel state to the post-game title/rank.
+- `src/data/providers.js` defines the remote-AI provider presets (`PROVIDER_OPTIONS`, `presetList`) shown in the settings dialog.
+- `src/lib/dom.js` exports the local `h()` DOM helper; all views and dialogs build nodes through it so generated/user text stays in text nodes.
+- `src/lib/settings.js` loads/saves/clears the remote-AI settings (with key masking) from localStorage.
+- `src/ui/settings-dialog.js` is the「接入你的 AI」settings dialog. It mounts on `document.body` instead of going through `render()` (which would wipe an ongoing duel), pausing the round timer while open.
 - `src/lib/audio.js` synthesizes short WebAudio tones in the browser; it is opt-in and has no audio assets. Keep audio calls non-blocking and preserve the default-muted behavior.
+- `src/lib/theme.js` owns the light/dark theme state (`light`/`dark`) and the orthogonal skin state (`blossom` 樱花与星夜 / `midnight` 深夜聊天窗): both persisted in localStorage (`gang-ai:theme`, `gang-ai:skin`), applied via `<html data-theme>` / `<html data-skin>` and consumed purely through CSS custom properties in `styles.css`. Theme entry points are the topbar toggle and the「外观」segmented control in the settings dialog; skin entry is the topbar palette-button popover (`src/ui/skin-popover.js`, safe to open mid-duel — it does not pause the round timer). `src/data/skins.js` is the skin registry the popover renders from; add a skin there plus a token block in `styles.css`.
 - `scripts/smoke.mjs` exercises the engine and local/adapter path without a browser. `scripts/dom-check.mjs` creates a jsdom window, imports the actual app entry point, and drives the DOM flow. These scripts are the repository's executable regression checks.
-- `src/styles.css` contains the complete responsive dark chat-window UI, including selection, duel, result, animations, and reduced-motion rules. There is no framework component library or router.
+- `src/styles.css` contains the complete responsive dual-skin chat-window UI: blossom (sakura-pink/royal-blue, translucent panels over full-window background images) and midnight (深夜聊天窗 — solid charcoal/amber dark restored 1:1 from the original, plus a warm-paper light mode). Colors go through four CSS custom-property token blocks (`data-skin` × `data-theme`); block order in the file IS the precedence (blossom light → blossom dark → midnight light → midnight dark → midnight body/stage-pill overrides appended at EOF). Icons are self-hosted Material Symbols Outlined SVGs rendered via CSS `mask-image` + `currentColor` (`.icon i-*` classes). Static assets live in `public/assets/` and are referenced with absolute urls (`/assets/...`) — url() in a `<link>`-loaded stylesheet is NOT rewritten by Vite/esbuild, so assets must not live under `src/` nor inside CSS custom properties. There is no framework component library or router.
 
 ## Data flow and invariants
 
@@ -75,7 +80,7 @@ Important current rules are centralized as constants in `duel-engine.js`: maximu
 - Keep persona copy and balance data in `src/data/`, rules in `src/lib/duel-engine.js`, model integration in `src/lib/llm.js`, and DOM orchestration in `src/main.js`.
 - Preserve the local fallback path so the demo remains playable offline and remote failures do not interrupt a game.
 - Preserve the existing safe DOM rendering approach: generated/user text must remain text nodes, not interpolated `innerHTML`.
-- The product and design rationale are in `docs/杠精陪练房-创作计划书.md`; contest requirements and submission checks are in `docs/黑客松要求.md`. The candidate-topic discussion is in `docs/draft/寻找合适选题.md`. The docs hub and folder conventions are in `docs/README.md`.
+- The product and design rationale are in `docs/杠精陪练房-创作计划书.md`; contest requirements and submission checks are in `docs/黑客松要求.md`. The candidate-topic discussion is in `docs/draft/archive/寻找合适选题.md`. The docs hub and folder conventions are in `docs/README.md`.
 
 ## 开发日志约定
 
@@ -85,3 +90,9 @@ Important current rules are centralized as constants in `duel-engine.js`: maximu
 - 条目格式 `## HH:MM ｜ 标题`（用当前本地时间，精确到分钟），下附四项：做了什么 / 动了哪些文件 / 关键决策及原因 / 怎么验证的
 - logs 只记流水，复盘与想法写进 `docs/draft/`
 - 详细规范见 `docs/README.md`
+
+## 工作台与设计区协作约定
+
+- 每轮开发任务开始前查看 `docs/工作台.md` 待办；完成一轮后把该轮条目（原始描述+完成说明）归入归档区顶部「第N轮（YYMMDD）」小节
+- 大功能先在 `docs/design/idea/` 起一页纸，开发者确认立项后进 `docs/design/<模块>/` 走 design.md（开发者主导）→ designs-specs.md（AI 生成，开发唯一依据）双文档流程
+- spec/plan 落地后自动归档至模块 `archive/` 并把要点回写 `docs/project/` 对应现状文档；机制正本见 `docs/design/README.md`

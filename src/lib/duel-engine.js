@@ -26,10 +26,10 @@ export const ANGER_DELTA = {
 };
 
 export const STAGES = [
-  { id: 'polite', label: '礼貌', min: 0, max: 35, color: '#8FA88F' },
-  { id: 'sarcastic', label: '阴阳', min: 35, max: 65, color: '#FFD24A' },
-  { id: 'agitated', label: '上头', min: 65, max: 85, color: '#FF9A4D' },
-  { id: 'breakdown', label: '破防', min: 85, max: 100, color: '#FF4D4D' },
+  { id: 'polite', label: '礼貌', min: 0, max: 35 },
+  { id: 'sarcastic', label: '阴阳', min: 35, max: 65 },
+  { id: 'agitated', label: '上头', min: 65, max: 85 },
+  { id: 'breakdown', label: '破防', min: 85, max: 100 },
 ];
 
 export function stageOf(anger) {

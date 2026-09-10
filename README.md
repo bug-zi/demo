@@ -84,7 +84,7 @@ cp .env.example .env.local   # 然后填 VITE_LLM_API_KEY
 index.html            应用外壳
 src/
   main.js             状态机 + 四个界面（选人 / 对线 / 结局 / 报告）
-  styles.css          深夜聊天窗配色
+  styles.css          樱花粉 / 宝蓝双主题配色
   data/
     personas.js       3 个人设：软肋、四阶段台词、破防台词
     titles.js         赛后称号判定

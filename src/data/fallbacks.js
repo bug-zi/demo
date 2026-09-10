@@ -8,10 +8,10 @@ export const HIT_LABELS = {
 };
 
 export const HIT_QUIPS = {
-  softspot: '🎯 扎心了',
+  softspot: '扎心了',
   hit: '有效输出',
   miss: '没接住',
-  self_destruct: '💥 自爆',
+  self_destruct: '自爆',
 };
 
 /** 玩家自己上头（骂人 / 语无伦次）时，对手的通用反应。 */
