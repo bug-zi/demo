@@ -66,7 +66,9 @@ cp .env.example .env.local   # 然后填 VITE_LLM_API_KEY
 
 | | |
 |---|---|
-| 回合 | 每回合 30 秒，最多 8 轮 |
+| 回合 | 最多 8 轮 |
+| 难度 | 选人屏上选，只改每回合的输入时限：**噩梦 30s / 困难 45s / 简单 60s**（默认困难）。胜负规则三档完全一样 |
+| 主题 | 顶栏 ☀️/🌙 切换暗色（默认）/ 亮色，选择存在浏览器里 |
 | 赢 | 对方怒气值到 100 |
 | 输 | 自己自爆 2 次 |
 | 平 | 8 轮打完谁也没破防 |
@@ -89,11 +91,13 @@ src/
     personas.js       3 个人设：软肋、四阶段台词、破防台词
     titles.js         赛后称号判定
     fallbacks.js      判定标签、通用兜底台词
+    difficulty.js     三档难度（只改每回合输入时限）
     providers.js      服务商清单与一键预设
   lib/
     duel-engine.js    怒气值 / 情绪阶段 / 软肋判定 / 胜负
     llm.js            大脑适配层：本地 / Claude / OpenAI 兼容，同一套返回值
     settings.js       用户填的 AI 配置，存 localStorage
+    theme.js          暗色 / 亮色，只往 <html data-theme> 上挂个名字
     audio.js          WebAudio 现场合成音效，不加载任何音频文件
     dom.js            h() —— 所有文本走 textContent，绝不拼 HTML
   ui/

@@ -264,3 +264,16 @@ console.log('✓ 测试连接：成功 / 401 / 跨域 三种结果都说人话')
 
 delete global.localStorage;
 delete global.fetch;
+
+/* ------------------------------------------------------------------ */
+/* 6. 主题：在既没有 localStorage 也没有 document 的纯 node 下不能炸       */
+/* ------------------------------------------------------------------ */
+
+const theme = await import('../src/lib/theme.js');
+if (theme.loadTheme() !== 'dark') fail('没存过主题时应该回落到暗色');
+if (theme.normalizeTheme('荧光粉') !== 'dark') fail('非法主题名应该被收敛掉');
+if (theme.nextTheme('dark') !== 'light' || theme.nextTheme('light') !== 'dark') {
+  fail('nextTheme 应该在两套之间来回切');
+}
+if (theme.applyTheme('light') !== 'light') fail('applyTheme 应该返回生效的主题');
+console.log('✓ 主题：无 localStorage / 无 document 时不炸，非法值收敛到暗色');

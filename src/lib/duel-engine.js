@@ -6,7 +6,7 @@
  */
 
 export const MAX_ROUNDS = 8;
-export const ROUND_SECONDS = 30;
+// 每回合的输入时限由难度决定，见 data/difficulty.js
 export const MAX_SELF_DESTRUCTS = 2;
 export const MAX_ANGER = 100;
 
@@ -25,11 +25,13 @@ export const ANGER_DELTA = {
   self_destruct: -12,
 };
 
+// 四档的颜色不在这儿 —— 它得跟着主题走，所以放在 styles.css 的
+// --stage-* 变量里，这里只留 id。加主题时不用回来改这个文件。
 export const STAGES = [
-  { id: 'polite', label: '礼貌', min: 0, max: 35, color: '#8FA88F' },
-  { id: 'sarcastic', label: '阴阳', min: 35, max: 65, color: '#FFD24A' },
-  { id: 'agitated', label: '上头', min: 65, max: 85, color: '#FF9A4D' },
-  { id: 'breakdown', label: '破防', min: 85, max: 100, color: '#FF4D4D' },
+  { id: 'polite', label: '礼貌', min: 0, max: 35 },
+  { id: 'sarcastic', label: '阴阳', min: 35, max: 65 },
+  { id: 'agitated', label: '上头', min: 65, max: 85 },
+  { id: 'breakdown', label: '破防', min: 85, max: 100 },
 ];
 
 export function stageOf(anger) {

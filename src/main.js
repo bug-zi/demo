@@ -12,15 +12,28 @@ import { pickTitle } from './data/titles.js';
 import {
   MAX_ROUNDS,
   MAX_SELF_DESTRUCTS,
-  ROUND_SECONDS,
   createDuel,
   currentRound,
   recordTurn,
   stageOf,
   uniqueSoftspotHits,
 } from './lib/duel-engine.js';
+import {
+  DEFAULT_DIFFICULTY,
+  DIFFICULTIES,
+  getDifficulty,
+  secondsOf,
+} from './data/difficulty.js';
 import { engineLabel, generateTurn, isRemote } from './lib/llm.js';
 import { blip, isSoundEnabled, setSoundEnabled } from './lib/audio.js';
+import {
+  applyTheme,
+  initTheme,
+  loadTheme,
+  nextTheme,
+  paintThemeButton,
+  saveTheme,
+} from './lib/theme.js';
 import { h } from './lib/dom.js';
 import { openSettings } from './ui/settings-dialog.js';
 
@@ -31,7 +44,8 @@ const state = {
   duel: null,
   busy: false,
   timerId: null,
-  secondsLeft: ROUND_SECONDS,
+  difficulty: DEFAULT_DIFFICULTY,
+  secondsLeft: secondsOf(DEFAULT_DIFFICULTY),
 };
 
 /** 当前屏幕里需要原地更新的节点。 */
@@ -77,12 +91,55 @@ function viewSelect() {
         text: '选一个对手。你的目标不是把道理讲赢——是让他先绷不住。',
       }),
     ),
+    difficultyControl(),
     h('div', { class: 'persona-grid' }, PERSONAS.map(personaCard)),
     h('p', {
       class: 'footnote',
       text: '每个人都有软肋，藏着的那种。但话说太冲，先破防的可能是你自己。',
     }),
     isRemote() ? null : connectHint(),
+  );
+}
+
+/**
+ * 难度选择器：只改每回合的输入时限，不动胜负规则。
+ * 原地切 class 而不是重绘整屏 —— 重绘会把选人屏的滚动位置抖一下。
+ */
+function difficultyControl() {
+  const note = h('p', { class: 'diff-note' });
+
+  const paintNote = () => {
+    const { seconds, note: text } = getDifficulty(state.difficulty);
+    note.textContent = `每回合 ${seconds} 秒 —— ${text}`;
+  };
+
+  const buttons = DIFFICULTIES.map((item) =>
+    h('button', {
+      class: `seg-btn${state.difficulty === item.id ? ' is-active' : ''}`,
+      type: 'button',
+      text: `${item.label} ${item.seconds}s`,
+      'aria-pressed': String(state.difficulty === item.id),
+      onclick: () => {
+        if (state.difficulty === item.id) return;
+        state.difficulty = item.id;
+        DIFFICULTIES.forEach((d, index) => {
+          const active = d.id === item.id;
+          buttons[index].classList.toggle('is-active', active);
+          buttons[index].setAttribute('aria-pressed', String(active));
+        });
+        paintNote();
+        blip('reply');
+      },
+    }),
+  );
+
+  paintNote();
+  return h(
+    'div',
+    { class: 'diff' },
+    h('span', { class: 'diff-head', text: '难度' }),
+    h('div', { class: 'segmented diff-seg' }, buttons),
+    note,
   );
 }
 
@@ -137,7 +194,7 @@ function startDuel(personaId) {
   if (!persona) return;
   state.duel = createDuel(persona);
   state.busy = false;
-  state.secondsLeft = ROUND_SECONDS;
+  state.secondsLeft = secondsOf(state.difficulty);
   state.screen = 'duel';
   render();
 }
@@ -225,7 +282,13 @@ function viewDuel() {
           h('div', { class: 'persona-tagline small', text: `「${persona.tagline}」` }),
         ),
       ),
-      h('div', { class: 'duel-meta' }, refs.roundLabel, refs.timerLabel),
+      h(
+        'div',
+        { class: 'duel-meta' },
+        h('span', { class: 'diff-pill', text: getDifficulty(state.difficulty).label }),
+        refs.roundLabel,
+        refs.timerLabel,
+      ),
     ),
     h(
       'div',
@@ -383,7 +446,8 @@ function updateAngerUI() {
     refs.stagePill.textContent = stage.label;
     refs.stagePill.className = `stage-pill stage-${stage.id}`;
   }
-  if (refs.angerFill) refs.angerFill.style.background = stage.color;
+  // 颜色交给 CSS 变量 —— 换主题时怒气条要跟着变
+  if (refs.angerFill) refs.angerFill.style.background = `var(--stage-${stage.id})`;
 }
 
 async function finish(result) {
@@ -417,7 +481,7 @@ async function finish(result) {
 
 function startTimer() {
   stopTimer();
-  state.secondsLeft = ROUND_SECONDS;
+  state.secondsLeft = secondsOf(state.difficulty);
   paintTimer();
   state.timerId = setInterval(tick, 1000);
 }
@@ -436,7 +500,7 @@ function stopTimer() {
   state.timerId = null;
 }
 
-/** 打开设置弹窗时暂停倒计时 —— 保留 secondsLeft，别偷偷给玩家回满 30 秒。 */
+/** 打开设置弹窗时暂停倒计时 —— 保留 secondsLeft，别偷偷给玩家回满这一回合。 */
 function pauseTimer() {
   stopTimer();
 }
@@ -492,6 +556,10 @@ function viewReport() {
       { class: 'stats' },
       stat('对手', `${duel.persona.avatar} ${duel.persona.name}`),
       stat('回合数', `${duel.rounds.length} / ${MAX_ROUNDS}`),
+      stat(
+        '难度',
+        `${getDifficulty(state.difficulty).label}（${secondsOf(state.difficulty)}s）`,
+      ),
       stat('软肋命中', `${hits} / ${duel.persona.softspots.length}`),
       stat('自爆次数', `${duel.selfDestructs} / ${MAX_SELF_DESTRUCTS}`),
       stat('最终怒气', `${duel.anger} / 100`),
@@ -544,6 +612,12 @@ function goSelect() {
 /* 战绩图导出                                                          */
 /* ------------------------------------------------------------------ */
 
+/** 读一个 CSS 变量的当前值（会跟着 data-theme 变）。canvas 里画图用得上。 */
+function cssVar(name) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || '#000000';
+}
+
 function exportCard() {
   const { duel } = state;
   if (!duel) return;
@@ -558,56 +632,68 @@ function exportCard() {
   const ctx = canvas.getContext('2d');
   ctx.scale(2, 2);
 
-  ctx.fillStyle = '#12100E';
+  // 直接从 CSS 变量取色，跟着当前主题走 —— 别在这儿再抄一份色值，加了主题就会对不上
+  const ink = {
+    bg: cssVar('--bg'),
+    panel: cssVar('--panel-2'),
+    text: cssVar('--text'),
+    muted: cssVar('--muted'),
+    accent: cssVar('--accent'),
+    anger: cssVar('--anger'),
+  };
+  const FONT = '"PingFang SC", "Microsoft YaHei", sans-serif';
+
+  ctx.fillStyle = ink.bg;
   ctx.fillRect(0, 0, W, H);
 
-  ctx.fillStyle = '#FF4D4D';
+  ctx.fillStyle = ink.anger;
   ctx.fillRect(0, 0, W, 8);
 
-  ctx.fillStyle = '#8A8078';
-  ctx.font = '20px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = ink.muted;
+  ctx.font = `20px ${FONT}`;
   ctx.fillText('杠精陪练房 · GANG.AI', 60, 90);
 
-  ctx.fillStyle = '#EDEDED';
-  ctx.font = 'bold 56px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = ink.text;
+  ctx.font = `bold 56px ${FONT}`;
   ctx.fillText(copy.headline, 60, 190);
 
-  ctx.fillStyle = '#8A8078';
-  ctx.font = '24px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = ink.muted;
+  ctx.font = `24px ${FONT}`;
   ctx.fillText(`对手：${duel.persona.name}`, 60, 240);
 
-  ctx.fillStyle = '#26221E';
+  ctx.fillStyle = ink.panel;
   ctx.fillRect(60, 290, W - 120, 190);
-  ctx.fillStyle = '#FFD24A';
-  ctx.font = 'bold 22px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = ink.accent;
+  ctx.font = `bold 22px ${FONT}`;
   ctx.fillText(title.rank, 90, 340);
-  ctx.fillStyle = '#EDEDED';
-  ctx.font = 'bold 40px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = ink.text;
+  ctx.font = `bold 40px ${FONT}`;
   ctx.fillText(title.name, 90, 395);
-  ctx.fillStyle = '#8A8078';
-  ctx.font = '20px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = ink.muted;
+  ctx.font = `20px ${FONT}`;
   wrapText(ctx, title.desc, 90, 435, W - 220, 28);
 
   const rows = [
     ['回合数', `${duel.rounds.length} / ${MAX_ROUNDS}`],
+    ['难度', `${getDifficulty(state.difficulty).label}（${secondsOf(state.difficulty)}s）`],
     ['软肋命中', `${uniqueSoftspotHits(duel)} / ${duel.persona.softspots.length}`],
     ['自爆次数', `${duel.selfDestructs} / ${MAX_SELF_DESTRUCTS}`],
     ['最终怒气', `${duel.anger} / 100`],
   ];
   let y = 550;
-  ctx.font = '24px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.font = `24px ${FONT}`;
   for (const [label, value] of rows) {
-    ctx.fillStyle = '#8A8078';
+    ctx.fillStyle = ink.muted;
     ctx.fillText(label, 60, y);
-    ctx.fillStyle = '#EDEDED';
+    ctx.fillStyle = ink.text;
     ctx.fillText(value, 300, y);
     y += 52;
   }
 
-  ctx.fillStyle = '#8A8078';
-  ctx.font = '20px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
-  wrapText(ctx, '软肋这东西，人人都有一根。', 60, 880, W - 120, 30);
-  ctx.fillText(`引擎：${engineLabel()}`, 60, 950);
+  ctx.fillStyle = ink.muted;
+  ctx.font = `20px ${FONT}`;
+  wrapText(ctx, '软肋这东西，人人都有一根。', 60, 920, W - 120, 30);
+  ctx.fillText(`引擎：${engineLabel()}`, 60, 960);
 
   canvas.toBlob((blob) => {
     if (!blob) return;
@@ -662,6 +748,14 @@ function wireTopbar() {
 
   // 注意：这段必须在下面 sound-toggle 的早退之前，否则声音按钮缺失会连带跳过设置按钮
   document.getElementById('settings-btn')?.addEventListener('click', openSettingsDialog);
+
+  const themeBtn = document.getElementById('theme-btn');
+  initTheme(themeBtn);
+  themeBtn?.addEventListener('click', () => {
+    const theme = applyTheme(saveTheme(nextTheme(loadTheme())));
+    paintThemeButton(themeBtn, theme);
+    blip('reply');
+  });
 
   const toggle = document.getElementById('sound-toggle');
   if (!toggle) return;
