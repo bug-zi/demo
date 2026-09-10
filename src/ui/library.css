@@ -1,4 +1,4 @@
-/* 话术资料库样式 —— 由 library.js 自行 import（Phase A 与 2.0 并行，不碰 styles.css）。
+/* 话术资料库样式 —— 由 index.html 以 <link> 加载（与 styles.css 分立是刻意设计：模块自包含，styles.css 不膨胀）。
    只定义新类、不覆写既有类；只用四态令牌（2 皮肤 × 2 深浅自动适配），零写死色。 */
 
 .library {

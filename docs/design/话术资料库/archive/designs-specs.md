@@ -1,7 +1,7 @@
 # 话术资料库 · 实现规格
 
-> 状态：实施中（Phase A）。依据 `design.md` 6 条意图生成，开发唯一依据。
-> 分期：**Phase A（本轮）= 纯新增文件，零碰 2.0 窗口文件**；Phase B = 大厅接线，触发条件「嘴强王者 2.0 落地」由开发者确认后执行。
+> 状态：已落地（260911，Phase A + Phase B 全部完成；library-check / smoke / dom-check / build 全绿，四态令牌采样验收通过；spec 随即归档至 `archive/`，落地记录见文末 §10）。
+> 历史分期：**Phase A = 纯新增文件，零碰 2.0 窗口文件**；Phase B = 大厅接线（2.0 落地后执行）。
 
 ## 1. 分期边界
 
@@ -109,13 +109,25 @@ jsdom 环境搭法照抄 `dom-check.mjs:3-14`（globals + `await import`），�
 
 ## 9. 验收清单（Phase A）
 
-- [ ] comebacks.js 120 条全量灌入，id 唯一、字段齐、scene/type 全在登记表内
-- [ ] 8 场景各 ≥10 条，三类型各 ≥15 条
-- [ ] notes.js 坏数据收敛不抛；纯函数 toggle/upsert/delete 语义正确（含空文本抛错）
-- [ ] storage 不可用时安静降级（load 空 / save 跳过）
-- [ ] 视图四轴筛选 + 搜索 + 星标 + 自建增删改 + 返回全通，局部重绘不丢输入焦点
-- [ ] 全部经 h() 文本节点渲染，无 innerHTML
-- [ ] library.css 纯令牌零写死色，零新图标资产，零既有类覆写
-- [ ] `node scripts/library-check.mjs` 三节全绿
-- [ ] `npm run smoke` / `npm run dom-check` 跑一遍**只记录不修复**（2.0 半成品可能红，非本模块回归）
-- [ ] 大厅对资料库的锁定卡原样保留（Phase B 才解锁），现有界面零变化
+- [x] comebacks.js 120 条全量灌入，id 唯一、字段齐、scene/type 全在登记表内
+- [x] 8 场景各 ≥10 条，三类型各 ≥15 条
+- [x] notes.js 坏数据收敛不抛；纯函数 toggle/upsert/delete 语义正确（含空文本抛错）
+- [x] storage 不可用时安静降级（load 空 / save 跳过）
+- [x] 视图四轴筛选 + 搜索 + 星标 + 自建增删改 + 返回全通，局部重绘不丢输入焦点
+- [x] 全部经 h() 文本节点渲染，无 innerHTML
+- [x] library.css 纯令牌零写死色，零新图标资产，零既有类覆写
+- [x] `node scripts/library-check.mjs` 三节全绿
+- [x] `npm run smoke` / `npm run dom-check` 跑一遍只记录不修复（2.0 半成品可能红，非本模块回归）——实测合并状态全绿
+- [x] 大厅对资料库的锁定卡原样保留（Phase B 才解锁），现有界面零变化
+
+## 10. Phase B 落地记录（260911 补记）
+
+Phase B 于 2.0 落地同窗口完成接线（提交 30f9d3c），260911 白班收口验收与文档回写。与 §7 清单的对应及两处偏差：
+
+1. main.js 接线（screen `'library'` + render 分支 + 真卡 + `enterLibrary()` + 数据回调）——✅ 按清单；state 持有 `favorites`/`notes`，回调里改 + save。
+2. dom-check 第 13 节（解锁进入 / 筛选 / 收藏 / 自建落 localStorage / 返回 / 对局角标不变）——✅ 按清单。
+3. **偏差一（样式接线方式）**：spec §5 写「由 main.js `import './ui/library.css'`」，实际落地为 **index.html `<link rel="stylesheet" href="/src/ui/library.css">`**。效果等价（dev 与 build 产物均已验证含资料库样式），且同样满足「library.js 顶部不 import CSS，裸 Node 检查脚本可直跑」的约束；index.html 本就是两份样式表的加载点，职责更集中。library.js / library.css 头注释已同步改为实况。
+4. **偏差二（落地顺序）**：spec 设想 Phase A 提交后再做 Phase B 接线；实际 2.0 与资料库 Phase A 同提交（30f9d3c）合入时已一并带上 Phase B 接线、dom-check 13 节与 package.json `library-check` alias，本轮回口的是验收与文档。
+5. library.css 并回 styles.css 还是长期独立——**定案：长期独立**（模块自包含、styles.css 不膨胀、纯令牌已验证四态自适应；index.html 集中加载两份样式表）。
+6. 验收：`npm run library-check` / `smoke` / `dom-check` / `build` 全绿；dev 浏览器四态令牌采样（注入 `* { transition: none }` 排节流假象）——`.entry-card` 底=--surface、非选中 chip=--surface、选中 chip=--accent-soft、自建按钮=--accent、meta=--muted、tag=--surface-deep 逐一吻合；真浏览器交互冒烟（收藏★落盘 / 自建带徽标落盘 / 仅收藏与自建筛选 / 搜索 / 返回大厅）全过；桌面 720px 与 390px 移动端均无横向溢出。截图通道不可用（同大厅轮先例），令牌法为准。
+7. 现状回写：`docs/project/话术资料库.md`（新建现状页）、`docs/project/00-总览.md`（五屏状态机 + 目录职责）、根 `CLAUDE.md`（架构节 + 命令节）、`docs/design/README.md`（模块状态）。

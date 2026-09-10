@@ -201,6 +201,11 @@ body {
   mask-image: url('/assets/icons/cake.svg');
 }
 
+.i-storefront {
+  -webkit-mask-image: url('/assets/icons/storefront.svg');
+  mask-image: url('/assets/icons/storefront.svg');
+}
+
 /* ---------------- 头像：主题色淡底圆 + 线性图标 ---------------- */
 
 .avatar {
@@ -688,10 +693,10 @@ body {
   font-weight: 700;
 }
 
-/* 弹窗里的「外观」两段控件（类名与 .seg-btn 区分开，别互相污染断言） */
-.theme-seg {
+/* 弹窗里的「外观」两段控件 + 「对局」四档时限（类名与 .seg-btn 区分开，别互相污染断言） */
+.theme-seg,
+.round-seg {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
   gap: 1px;
   padding: 1px;
   border: 1px solid var(--line);
@@ -700,7 +705,16 @@ body {
   overflow: hidden;
 }
 
-.theme-seg-btn {
+.theme-seg {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.round-seg {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.theme-seg-btn,
+.round-seg-btn {
   padding: 9px 6px;
   border: none;
   background: var(--surface-deep);
@@ -711,7 +725,8 @@ body {
   transition: background 0.15s, color 0.15s;
 }
 
-.theme-seg-btn.is-active {
+.theme-seg-btn.is-active,
+.round-seg-btn.is-active {
   background: var(--accent);
   color: var(--on-accent);
   font-weight: 700;
@@ -845,6 +860,25 @@ body {
 .timer-label.urgent {
   color: var(--stage-breakdown);
   font-weight: 700;
+}
+
+/* 计时局的暂停按钮：小号文字按钮，别抢发送按钮的戏 */
+.pause-btn {
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.pause-btn:hover {
+  background: var(--surface-deep);
+  color: var(--text);
 }
 
 /* 怒气条 */

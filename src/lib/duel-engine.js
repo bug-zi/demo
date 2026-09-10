@@ -99,12 +99,18 @@ export function localHitType(persona, text) {
   return 'miss';
 }
 
-export function createDuel(persona) {
+/**
+ * @param {object} persona
+ * @param {{roundSeconds?:number}} [options] 回合倒计时秒数，0 = 不限时（UI 层据此不启动倒计时）；
+ *   默认仍是 ROUND_SECONDS。时限跟着 duel 走：进行中的局不随设置改动变卦。
+ */
+export function createDuel(persona, { roundSeconds = ROUND_SECONDS } = {}) {
   const mode = categoryOf(persona).mode;
   return {
     persona,
     personaId: persona.id,
     mode,
+    roundSeconds,
     // 点火从 0 拉满，灭火从 100 往下哄
     anger: mode === 'extinguish' ? MAX_ANGER : 0,
     rounds: [],

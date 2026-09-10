@@ -14,13 +14,13 @@ import { pickTitle } from './data/titles.js';
 import {
   MAX_ROUNDS,
   MAX_SELF_DESTRUCTS,
-  ROUND_SECONDS,
   createDuel,
   currentRound,
   recordTurn,
   stageOf,
   uniqueSoftspotHits,
 } from './lib/duel-engine.js';
+import { loadRoundSeconds } from './lib/duel-options.js';
 import { engineLabel, generateTurn, isRemote } from './lib/llm.js';
 import { blip, isSoundEnabled, setSoundEnabled } from './lib/audio.js';
 import { h } from './lib/dom.js';
@@ -45,7 +45,8 @@ const state = {
   duel: null,
   busy: false,
   timerId: null,
-  secondsLeft: ROUND_SECONDS,
+  secondsLeft: 0,
+  timerPaused: false, // 手动暂停：跨大厅往返保持，发完一言进下一轮自动解除
   favorites: loadFavorites(),
   notes: loadNotes(),
 };
@@ -315,9 +316,11 @@ function personaCard(persona) {
 function startDuel(personaId) {
   const persona = getPersona(personaId);
   if (!persona) return;
-  state.duel = createDuel(persona);
+  // 时限在开局时定格：设置改动只影响下一局，进行中的局不中途变卦
+  state.duel = createDuel(persona, { roundSeconds: loadRoundSeconds() });
   state.busy = false;
-  state.secondsLeft = ROUND_SECONDS;
+  state.secondsLeft = state.duel.roundSeconds;
+  state.timerPaused = false;
   state.screen = 'duel';
   render();
 }
@@ -350,7 +353,17 @@ function viewDuel() {
     class: 'round-label',
     text: `第 ${currentRound(duel)} / ${MAX_ROUNDS} 轮`,
   });
-  refs.timerLabel = h('span', { class: 'timer-label' });
+  // 开了计时的局才有倒计时 + 暂停按钮；不限时的局 meta 区只剩轮次
+  const timed = duel.roundSeconds > 0;
+  refs.timerLabel = timed ? h('span', { class: 'timer-label' }) : null;
+  refs.pauseBtn = timed
+    ? h('button', {
+        class: 'pause-btn',
+        type: 'button',
+        text: state.timerPaused ? '继续' : '暂停',
+        onclick: () => setPaused(!state.timerPaused),
+      })
+    : null;
 
   refs.input = h('textarea', {
     class: 'input',
@@ -412,7 +425,7 @@ function viewDuel() {
           h('div', { class: 'persona-tagline small', text: `「${persona.tagline}」` }),
         ),
       ),
-      h('div', { class: 'duel-meta' }, refs.roundLabel, refs.timerLabel),
+      h('div', { class: 'duel-meta' }, refs.roundLabel, refs.timerLabel, refs.pauseBtn),
     ),
     h(
       'div',
@@ -443,12 +456,16 @@ function viewDuel() {
     scrollLogToBottom();
     refs.input?.focus();
   });
-  // 新开局走满 30s；从大厅续局则接着剩余秒数走，不偷偷回满
-  if (state.secondsLeft > 0 && state.secondsLeft < ROUND_SECONDS) {
-    paintTimer();
-    resumeTimer();
-  } else {
-    startTimer();
+  // 开了计时的局才碰计时器：暂停中就冻结着回来；大厅往返接着剩余秒数走，不偷偷回满；新回合走满
+  if (duel.roundSeconds > 0) {
+    if (state.timerPaused) {
+      paintTimer();
+    } else if (state.secondsLeft > 0 && state.secondsLeft < duel.roundSeconds) {
+      paintTimer();
+      resumeTimer();
+    } else {
+      startTimer();
+    }
   }
   return root;
 }
@@ -648,8 +665,11 @@ async function finish(result) {
 
 function startTimer() {
   stopTimer();
-  state.secondsLeft = ROUND_SECONDS;
+  state.secondsLeft = state.duel.roundSeconds;
+  // 新一回合从满秒重新走 —— 上一回合按过的暂停不带到这一回合
+  state.timerPaused = false;
   paintTimer();
+  updatePauseBtn();
   state.timerId = setInterval(tick, 1000);
 }
 
@@ -674,8 +694,25 @@ function pauseTimer() {
 
 function resumeTimer() {
   if (state.timerId) return;
+  if (state.timerPaused) return; // 手动暂停优先：关设置弹窗的自动恢复不许把暂停偷走
   if (state.screen !== 'duel' || !state.duel || state.duel.result) return;
   state.timerId = setInterval(tick, 1000);
+}
+
+/** 暂停按钮：冻结/恢复当前回合的倒计时（只对开了计时的局有意义）。 */
+function setPaused(paused) {
+  if (!state.duel || state.duel.result || state.duel.roundSeconds <= 0) return;
+  state.timerPaused = paused;
+  if (paused) {
+    stopTimer();
+  } else {
+    resumeTimer();
+  }
+  updatePauseBtn();
+}
+
+function updatePauseBtn() {
+  if (refs.pauseBtn) refs.pauseBtn.textContent = state.timerPaused ? '继续' : '暂停';
 }
 
 function paintTimer() {

@@ -9,6 +9,7 @@
 import { h } from '../lib/dom.js';
 import { PROVIDER_OPTIONS, presetList } from '../data/providers.js';
 import { loadSettings, saveSettings, clearSettings, maskKey } from '../lib/settings.js';
+import { ROUND_SECONDS_OPTIONS, loadRoundSeconds, saveRoundSeconds } from '../lib/duel-options.js';
 import { testConnection } from '../lib/llm.js';
 import { blip } from '../lib/audio.js';
 import { applyTheme, onTheme } from '../lib/theme.js';
@@ -35,6 +36,8 @@ export function openSettings({ onPause, onResume, onChange } = {}) {
   if (document.querySelector('.modal-backdrop')) return;
 
   const draft = { ...loadSettings() };
+  // 回合时限与「外观」一样点击即时落盘，不进 AI draft、不受「清除」影响
+  const currentRound = loadRoundSeconds();
   let keyVisible = false;
   let busy = false;
 
@@ -279,6 +282,28 @@ export function openSettings({ onPause, onResume, onChange } = {}) {
           h('button', { class: 'theme-seg-btn', type: 'button', text: '浅色', onclick: () => applyTheme('light') }),
           h('button', { class: 'theme-seg-btn', type: 'button', text: '深色', onclick: () => applyTheme('dark') }),
         ),
+      ),
+      h('div', { class: 'field' },
+        h('span', { class: 'field-label', text: '对局' }),
+        h('div', { class: 'round-seg' },
+          ...ROUND_SECONDS_OPTIONS.map((option) =>
+            h('button', {
+              class: `round-seg-btn${currentRound === option.value ? ' is-active' : ''}`,
+              type: 'button',
+              text: option.label,
+              'aria-pressed': String(currentRound === option.value),
+              onclick: (event) => {
+                saveRoundSeconds(option.value);
+                event.currentTarget.parentElement.querySelectorAll('.round-seg-btn').forEach((btn) => {
+                  const on = btn === event.currentTarget;
+                  btn.classList.toggle('is-active', on);
+                  btn.setAttribute('aria-pressed', String(on));
+                });
+              },
+            }),
+          ),
+        ),
+        h('p', { class: 'field-hint', text: '回合时限，改动从下一局开始生效。' }),
       ),
       body,
       status,

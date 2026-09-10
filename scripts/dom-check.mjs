@@ -57,10 +57,10 @@ selectBack.click();
 if (!$('.lobby')) fail('选人屏「返回大厅」后应回到大厅');
 $('.module-card.primary').click();
 const cards = $$('.persona-card:not(.locked)');
-if (cards.length !== 3) fail(`选人屏应该有 3 张可玩卡，实际 ${cards.length}`);
+if (cards.length !== 5) fail(`选人屏应该有 5 张可玩卡，实际 ${cards.length}`);
 console.log('✓ 大厅 ⇄ 选人屏往返：', $$('.persona-name').map((n) => n.textContent).join(' / '));
 
-// 2b. 选人屏按三房分组：杠精房 2 卡 / 谈判房 1 卡 / 情商房锁定占位
+// 2b. 选人屏按三房分组：杠精房 2 卡 / 谈判房 3 卡 / 情商房锁定占位
 const groups = $$('.category-group');
 if (groups.length !== 3) fail(`选人屏应有 3 个分组（杠精/谈判/情商），实际 ${groups.length}`);
 const groupNames = groups.map((g) => g.querySelector('.category-name').textContent);
@@ -69,7 +69,7 @@ if (groupNames.join(',') !== '杠精房,谈判房,情商房') {
 }
 const gangCount = groups[0].querySelectorAll('.persona-card:not(.locked)').length;
 const dealCount = groups[1].querySelectorAll('.persona-card:not(.locked)').length;
-if (gangCount !== 2 || dealCount !== 1) {
+if (gangCount !== 2 || dealCount !== 3) {
   fail(`分组卡数不对：杠精房 ${gangCount} / 谈判房 ${dealCount}`);
 }
 const eqLock = groups[2].querySelector('.persona-card.locked');
@@ -77,7 +77,7 @@ if (!eqLock || !eqLock.disabled || !/即将开放/.test(eqLock.textContent)) {
   fail('情商房应有 disabled 的「即将开放」占位卡');
 }
 if (!$('.select .hero-title').textContent.includes('选个对手')) fail('选人屏主标题应覆盖三房语境');
-console.log('✓ 选人屏三房分组：杠精房 2 / 谈判房 1 / 情商房锁定占位');
+console.log('✓ 选人屏三房分组：杠精房 2 / 谈判房 3 / 情商房锁定占位');
 
 // 3. 进入对线屏
 cards[1].click(); // 阴阳怪气亲戚
@@ -86,6 +86,9 @@ const opener = $('.bubble-ai').textContent;
 if (!opener) fail('开场白没渲染');
 console.log('✓ 对线屏开场:', opener);
 if ($$('.preset-chip').length !== 3) fail('预设话术应该有 3 个');
+if ($('.timer-label')) fail('默认不限时的局不该有倒计时标签');
+if ($('.pause-btn')) fail('不限时的局不该有暂停按钮');
+console.log('✓ 默认不限时：无倒计时、无暂停按钮');
 
 // 4. AI 打字期间跑路：回合离场记账，回来补画（不报错）
 const duelBack = $('.duel .back-btn');
@@ -117,7 +120,7 @@ const anger = Number($('.anger-num').textContent);
 console.log('✓ 三个软肋后怒气值:', anger, '| 阶段:', $('.stage-pill').textContent);
 if (anger !== 90) fail(`三个软肋应该到 90，实际 ${anger}`);
 
-// 6. 对线中途去大厅：角标 + 回来续局（记录/怒气/轮次全在，倒计时续走）
+// 6. 对线中途去大厅：角标 + 回来续局（记录/怒气/轮次全在；默认不限时，无计时）
 duelBack.click();
 if (!$('.lobby')) fail('对线中点「大厅」应该回到大厅');
 const liveBadge = $('.module-card.primary .module-badge');
@@ -129,8 +132,8 @@ if ($$('.bubble-me').length !== 3 || $$('.bubble-ai').length !== 4) {
   fail(`续局后对话记录不完整：我方 ${$$('.bubble-me').length} 条 / 对方 ${$$('.bubble-ai').length} 条`);
 }
 if ($('.round-label').textContent !== '第 4 / 8 轮') fail(`续局后轮次标签不对：${$('.round-label').textContent}`);
-if (!/^\d+s$/.test($('.timer-label').textContent)) fail(`续局后倒计时应该续走：${$('.timer-label').textContent}`);
-console.log('✓ 中断恢复：角标/记录/怒气/轮次/倒计时全部保留');
+if ($('.timer-label')) fail('不限时局大厅往返后也不该冒出倒计时');
+console.log('✓ 中断恢复：角标/记录/怒气/轮次全部保留（默认不限时，无计时）');
 
 // 7. 补一句自己的话，收掉这一局
 $('.input').value = '但是您当年不也是这么过来的吗？';
@@ -166,6 +169,56 @@ if ($('.module-card.primary .module-badge')) fail('已出结果的局不该再�
 $('.module-card.primary').click();
 if (!$('.select')) fail('已出结果的局，主卡应进选人而非续局');
 console.log('✓ 离场落账：不跳报告，主卡回选人');
+
+// 9b. 回合时限：30s 计时局 + 暂停按钮（冻结/继续/弹窗不偷暂停/大厅往返保持暂停）
+window.localStorage.setItem('gang-ai:round-seconds:v1', '30');
+$$('.persona-card:not(.locked)')[1].click();
+if (!$('.duel')) fail('设置 30s 后开局应进对线屏');
+if ($('.timer-label').textContent !== '30s') fail(`计时局应从 30s 起跳，实际「${$('.timer-label').textContent}」`);
+const pauseBtn = $('.pause-btn');
+if (!pauseBtn) fail('计时局应该有暂停按钮');
+if (pauseBtn.textContent !== '暂停') fail(`暂停按钮初始应为「暂停」，实际「${pauseBtn.textContent}」`);
+pauseBtn.click();
+if (pauseBtn.textContent !== '继续') fail(`暂停后按钮应变「继续」，实际「${pauseBtn.textContent}」`);
+await new Promise((r) => setTimeout(r, 1600));
+if ($('.timer-label').textContent !== '30s') fail(`暂停期间倒计时应冻结在 30s，实际「${$('.timer-label').textContent}」`);
+pauseBtn.click(); // 继续
+await new Promise((r) => setTimeout(r, 1600));
+const moved = Number($('.timer-label').textContent.replace('s', ''));
+if (!(moved > 0 && moved < 30)) fail(`继续后倒计时应走秒（0<s<30），实际 ${moved}s`);
+pauseBtn.click(); // 再暂停，冻结住
+const frozen = $('.timer-label').textContent;
+// 手动暂停时开关一次设置弹窗：关弹窗的自动恢复不能把暂停偷走
+$('#settings-btn').click();
+if (!$('.modal')) fail('暂停中应能打开设置弹窗');
+$('.modal-head .ghost-btn').click();
+await new Promise((r) => setTimeout(r, 1500));
+if ($('.timer-label').textContent !== frozen) fail(`关设置弹窗不应解除手动暂停：前「${frozen}」后「${$('.timer-label').textContent}」`);
+if ($('.pause-btn').textContent !== '继续') fail(`关弹窗后暂停按钮应仍为「继续」，实际「${$('.pause-btn').textContent}」`);
+// 大厅往返：暂停状态与冻结秒数都保持
+$('.duel .back-btn').click();
+if (!$('.lobby')) fail('计时局回大厅应正常');
+$('.module-card.primary').click();
+if (!$('.duel')) fail('计时局回大厅后应能续局');
+if ($('.timer-label').textContent !== frozen) fail(`大厅往返应保持冻结秒数：前「${frozen}」后「${$('.timer-label').textContent}」`);
+if ($('.pause-btn').textContent !== '继续') fail(`大厅往返应保持暂停状态（按钮=继续），实际「${$('.pause-btn').textContent}」`);
+await new Promise((r) => setTimeout(r, 1500));
+if ($('.timer-label').textContent !== frozen) fail('保持暂停期间倒计时不该自己走');
+// 收掉这一局，别给后面的设置弹窗小节留活局
+$('.pause-btn').click(); // 继续
+for (const chip of $$('.preset-chip')) {
+  chip.click();
+  await new Promise((r) => setTimeout(r, 1200));
+}
+$('.input').value = '但是您当年不也是这么过来的吗？';
+$('.input').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+await new Promise((r) => setTimeout(r, 4000));
+if (!$('.report')) fail('计时局应能正常打完进报告');
+const timerLobbyBtn = $$('.report-actions .btn').find((b) => b.textContent === '返回大厅');
+if (!timerLobbyBtn) fail('报告屏应该有「返回大厅」按钮');
+timerLobbyBtn.click();
+if (!$('.lobby')) fail('计时局收尾后应能返回大厅');
+console.log('✓ 回合时限：30s 起跳/暂停冻结/继续走秒/弹窗不偷暂停/往返保持暂停');
 
 /* ------------------------------------------------------------------ */
 /* 10. 设置弹窗：接入自己的 AI（放在最后，否则存了 key 后面会走网络）      */
@@ -238,6 +291,18 @@ themeSeg[1].click();
 if (document.documentElement.dataset.theme !== 'dark') fail('点深色应切到 dark');
 themeSeg[themeBeforeSeg === 'dark' ? 1 : 0].click(); // 恢复原主题
 console.log('✓ 设置弹窗外观切换正常');
+
+// 对局：回合时限四档，点击即时落盘（此刻 storage 是 9b 节种进去的 30）
+const roundSeg = $$('.round-seg-btn');
+if (roundSeg.length !== 4) fail(`「对局」应有 4 档（不限时/15s/30s/60s），实际 ${roundSeg.length}`);
+const activeRound = $('.round-seg-btn.is-active');
+if (!activeRound || activeRound.textContent !== '30s') fail(`active 档应为「30s」（9b 节设置过），实际「${activeRound?.textContent}」`);
+roundSeg[0].click(); // 不限时
+if (window.localStorage.getItem('gang-ai:round-seconds:v1') !== '0') {
+  fail(`点「不限时」应落盘 '0'，实际「${window.localStorage.getItem('gang-ai:round-seconds:v1')}」`);
+}
+if ($('.round-seg-btn.is-active').textContent !== '不限时') fail('active 档应随点击更新为「不限时」');
+console.log('✓ 对局时限档位：四档齐/active 反映现状/点击即时落盘');
 
 $('.modal-head .ghost-btn').click();
 if ($('.modal')) fail('点 ✕ 应该关掉弹窗');

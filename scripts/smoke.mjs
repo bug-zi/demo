@@ -1,7 +1,8 @@
 // 冒烟测试：不开浏览器，直接跑引擎 + 本地大脑，验证四条路径都能走通。
 // 用法：npm run smoke
 import { PERSONAS } from '../src/data/personas.js';
-import { createDuel, recordTurn, uniqueSoftspotHits, stageOf } from '../src/lib/duel-engine.js';
+import { ROUND_SECONDS, createDuel, recordTurn, uniqueSoftspotHits, stageOf } from '../src/lib/duel-engine.js';
+import { loadRoundSeconds, saveRoundSeconds } from '../src/lib/duel-options.js';
 import { categoryOf } from '../src/data/categories.js';
 import { generateTurn, engineLabel, testConnection } from '../src/lib/llm.js';
 import { saveSettings } from '../src/lib/settings.js';
@@ -11,6 +12,17 @@ const fail = (msg) => {
   console.error('✗', msg);
   process.exit(1);
 };
+
+// 0. 对局选项契约：createDuel 携带回合时限（0=不限时），无存储环境默认不限时
+if (createDuel(PERSONAS[0]).roundSeconds !== ROUND_SECONDS) {
+  fail(`createDuel 默认应携带 ROUND_SECONDS=${ROUND_SECONDS}`);
+}
+if (createDuel(PERSONAS[0], { roundSeconds: 0 }).roundSeconds !== 0) {
+  fail('createDuel 应接受 roundSeconds 选项（0=不限时）');
+}
+if (loadRoundSeconds() !== 0) fail(`无 localStorage 环境默认应不限时，实际 ${loadRoundSeconds()}`);
+if (saveRoundSeconds(45) !== 0) fail('saveRoundSeconds 对非法值应收敛到 0');
+console.log('✓ 对局选项：引擎携带 roundSeconds / 无存储默认不限时 / 非法值收敛');
 
 async function play(personaId, lines, label, presetCount = 0) {
   const persona = PERSONAS.find((p) => p.id === personaId);
@@ -74,10 +86,13 @@ await play('laoban', ['你懂个屁', '你就是个废物'], '自爆路径');
 /* 5. 灭火局（情商房框架）：人设数据后续上，这里用假人设验引擎            */
 /* ------------------------------------------------------------------ */
 
-// 现有人设归组：网友/亲戚 → 杠精房，老板 → 谈判房
+// 现有人设归组：网友/亲戚 → 杠精房，老板/摊主/甲方 → 谈判房
 if (categoryOf(PERSONAS.find((p) => p.id === 'wangyou')).id !== 'gang') fail('杠精网友应归杠精房');
 if (categoryOf(PERSONAS.find((p) => p.id === 'qinqi')).id !== 'gang') fail('阴阳怪气亲戚应归杠精房');
 if (categoryOf(PERSONAS.find((p) => p.id === 'laoban')).id !== 'deal') fail('画饼老板应归谈判房');
+if (categoryOf(PERSONAS.find((p) => p.id === 'tanzhu')).id !== 'deal') fail('砍价摊主应归谈判房');
+if (categoryOf(PERSONAS.find((p) => p.id === 'jiafang')).id !== 'deal') fail('五彩斑斓甲方应归谈判房');
+if (PERSONAS.length !== 5) fail(`人设应恰 5 个（A1 扩充后），实际 ${PERSONAS.length}`);
 
 // 假情商人设：三个心结 delta 和 ≈ 90，与现有人设同标尺
 const EQ_PERSONA = {

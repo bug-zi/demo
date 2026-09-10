@@ -2,7 +2,7 @@
  * 话术资料库视图：自包含模块（同 settings-dialog.js 定位）。
  * main.js 挂载时只调 createLibraryView({数据 getter + 持久化回调 + onBack})；
  * 筛选/搜索/表单状态在闭包里，视图自管局部重绘（输入框不重建，不丢焦点）。
- * 样式在 ./library.css，由 main.js 在 Phase B 接线时 import（裸 Node 检查脚本跑不动 CSS import）。
+ * 样式在 ./library.css，由 index.html 以 <link> 加载（不经 JS import：裸 Node 的检查脚本要能直接 import 本文件）。
  * 渲染铁律：全部经 h() 的 textContent，绝不拼 HTML。
  */
 import { h } from '../lib/dom.js';
