@@ -3,12 +3,20 @@
  *
  * 关键设计（见计划书 §6.1）：模型只负责输出 hitType，
  * 怒气值由前端查表计算。模型抽风也不会把游戏搞坏。
+ *
+ * 两种模式（见 categories.js）：
+ * - fire 点火局：怒气 0 起步，把对方激到 100 算赢（杠精房/谈判房）。
+ * - extinguish 灭火局：怒气 100 起步，把对方哄到阈值下算赢（情商房）；
+ *   增量方向整体翻转、八轮没哄好判负，没有平局。
  */
+
+import { categoryOf } from '../data/categories.js';
 
 export const MAX_ROUNDS = 8;
 export const ROUND_SECONDS = 30;
 export const MAX_SELF_DESTRUCTS = 2;
 export const MAX_ANGER = 100;
+export const EXTINGUISH_WIN_ANGER = 20;
 
 /**
  * 判定类型 → 怒气增量。
@@ -92,10 +100,13 @@ export function localHitType(persona, text) {
 }
 
 export function createDuel(persona) {
+  const mode = categoryOf(persona).mode;
   return {
     persona,
     personaId: persona.id,
-    anger: 0,
+    mode,
+    // 点火从 0 拉满，灭火从 100 往下哄
+    anger: mode === 'extinguish' ? MAX_ANGER : 0,
     rounds: [],
     selfDestructs: 0,
     softspotKeys: [],
@@ -127,6 +138,9 @@ export function recordTurn(duel, turn) {
       delta = ANGER_DELTA.hit;
     }
   }
+
+  // 灭火局整体翻方向：戳心结/有效安抚降怒气，火上浇油反而反弹
+  if (duel.mode === 'extinguish') delta = -delta;
 
   duel.anger = clamp(before + delta, 0, MAX_ANGER);
   if (turn.hitType === 'self_destruct') duel.selfDestructs += 1;
@@ -160,6 +174,12 @@ export function currentRound(duel) {
 /** @returns {'win'|'lose'|'draw'|null} */
 export function judge(duel) {
   if (duel.selfDestructs >= MAX_SELF_DESTRUCTS) return 'lose';
+  // 灭火局开局就是满怒气——必须先看 mode，再比数值，否则首回合就被 fire 规则误判成 win
+  if (duel.mode === 'extinguish') {
+    if (duel.anger <= EXTINGUISH_WIN_ANGER) return 'win';
+    if (duel.rounds.length >= MAX_ROUNDS) return 'lose'; // 时间到没哄好，明确失败态
+    return null;
+  }
   if (duel.anger >= MAX_ANGER) return 'win';
   if (duel.rounds.length >= MAX_ROUNDS) return 'draw';
   return null;

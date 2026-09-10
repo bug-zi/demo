@@ -10,6 +10,7 @@ export const PERSONAS = [
   {
     id: 'wangyou',
     name: '杠精网友',
+    category: 'gang',
     avatar: 'keyboard',
     difficulty: 3,
     tagline: '有一说一，你这话逻辑有问题',
@@ -81,6 +82,7 @@ export const PERSONAS = [
   {
     id: 'qinqi',
     name: '阴阳怪气亲戚',
+    category: 'gang',
     avatar: 'theater_comedy',
     difficulty: 2,
     tagline: '哎哟，还在北京呢？',
@@ -152,6 +154,7 @@ export const PERSONAS = [
   {
     id: 'laoban',
     name: '画饼老板',
+    category: 'deal',
     avatar: 'cake',
     difficulty: 4,
     tagline: '年轻人不要只看钱',

@@ -14,6 +14,22 @@ export const HIT_QUIPS = {
   self_destruct: '自爆',
 };
 
+/** 灭火局（情商房）版本：软肋的语义是「心结」，自爆的语义是「火上浇油」。 */
+
+export const EQ_HIT_LABELS = {
+  softspot: '说到心结',
+  hit: '有效安抚',
+  miss: '无效输出',
+  self_destruct: '火上浇油',
+};
+
+export const EQ_HIT_QUIPS = {
+  softspot: '说到位了',
+  hit: '气消一点',
+  miss: '没接住',
+  self_destruct: '更炸了',
+};
+
 /** 玩家自己上头（骂人 / 语无伦次）时，对手的通用反应。 */
 export const SELF_DESTRUCT_REACTIONS = [
   '你急了你急了。',

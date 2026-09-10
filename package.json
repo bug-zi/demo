@@ -1,15 +1,16 @@
 {
-  "name": "gang-ai",
+  "name": "zuiqiang-wangzhe",
   "private": true,
-  "version": "0.1.0",
+  "version": "2.0.0",
   "type": "module",
-  "description": "杠精陪练房 — 把吵架做成一门有怒气条、有软肋、有赛后复盘的对线竞技",
+  "description": "嘴强王者 — 杠精房点火局、谈判房点火局、情商房灭火局，多场景话术对线竞技",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "smoke": "node scripts/smoke.mjs",
-    "dom-check": "node scripts/dom-check.mjs"
+    "dom-check": "node scripts/dom-check.mjs",
+    "library-check": "node scripts/library-check.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0"

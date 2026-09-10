@@ -1,4 +1,4 @@
-/* 杠精陪练房 · 双主题（樱花粉浅色 / 宝蓝深色）——设计见 docs/draft/260910-样式优化设计方案.md */
+/* 嘴强王者 · 双主题（樱花粉浅色 / 宝蓝深色）——设计见 docs/draft/260910-样式优化设计方案.md */
 
 :root,
 :root[data-theme='light'] {
@@ -373,6 +373,40 @@ body {
   font-size: 15px;
 }
 
+/* 选人屏的场景分组（杠精房 / 谈判房 / 情商房） */
+.category-group {
+  margin-bottom: 26px;
+}
+
+.category-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.category-name {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.category-hint {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.persona-card.locked {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.persona-card.locked:hover {
+  border-color: var(--line);
+  background: var(--surface);
+  transform: none;
+}
+
 .persona-grid {
   display: grid;
   gap: 14px;
@@ -470,6 +504,111 @@ body {
 
 .hint-btn:hover {
   opacity: 0.8;
+}
+
+/* ---------------- 大厅 ---------------- */
+
+.lobby {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 18px 48px;
+}
+
+.lobby-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.module-card {
+  display: block;
+  width: 100%;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.module-card:hover {
+  border-color: var(--accent-strong);
+  background: var(--surface-deep);
+  transform: translateY(-2px);
+}
+
+.module-card.locked {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.module-card.locked:hover {
+  border-color: var(--line);
+  background: var(--surface);
+  transform: none;
+}
+
+.module-card.primary .module-name {
+  font-size: 20px;
+}
+
+.module-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.module-name {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.module-desc {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.module-badge {
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.module-badge.live {
+  border-color: var(--accent-strong);
+  color: var(--accent-strong);
+}
+
+/* 返回大厅按钮（选人屏左上 / 对线屏头部） */
+.back-btn {
+  padding: 4px 12px 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.back-btn:hover {
+  color: var(--text);
+  border-color: var(--accent-strong);
+}
+
+.duel-exit {
+  flex-shrink: 0;
 }
 
 /* ---------------- 设置弹窗 ---------------- */
@@ -686,6 +825,7 @@ body {
   align-items: center;
   gap: 10px;
   min-width: 0;
+  flex: 1;
 }
 
 .duel-meta {

@@ -2,6 +2,7 @@
 // 用法：npm run smoke
 import { PERSONAS } from '../src/data/personas.js';
 import { createDuel, recordTurn, uniqueSoftspotHits, stageOf } from '../src/lib/duel-engine.js';
+import { categoryOf } from '../src/data/categories.js';
 import { generateTurn, engineLabel, testConnection } from '../src/lib/llm.js';
 import { saveSettings } from '../src/lib/settings.js';
 import { pickTitle } from '../src/data/titles.js';
@@ -68,6 +69,82 @@ for (const p of PERSONAS) {
 
 // 4. 骂人两次应该自爆判负
 await play('laoban', ['你懂个屁', '你就是个废物'], '自爆路径');
+
+/* ------------------------------------------------------------------ */
+/* 5. 灭火局（情商房框架）：人设数据后续上，这里用假人设验引擎            */
+/* ------------------------------------------------------------------ */
+
+// 现有人设归组：网友/亲戚 → 杠精房，老板 → 谈判房
+if (categoryOf(PERSONAS.find((p) => p.id === 'wangyou')).id !== 'gang') fail('杠精网友应归杠精房');
+if (categoryOf(PERSONAS.find((p) => p.id === 'qinqi')).id !== 'gang') fail('阴阳怪气亲戚应归杠精房');
+if (categoryOf(PERSONAS.find((p) => p.id === 'laoban')).id !== 'deal') fail('画饼老板应归谈判房');
+
+// 假情商人设：三个心结 delta 和 ≈ 90，与现有人设同标尺
+const EQ_PERSONA = {
+  id: 'eq-test',
+  name: '灭火测试员',
+  category: 'eq',
+  softspots: [
+    { key: 'listen', delta: 30, keywords: ['听你说'] },
+    { key: 'own', delta: 32, keywords: ['我错了'] },
+    { key: 'time', delta: 28, keywords: ['给你时间'] },
+  ],
+};
+
+// 5.1 初始态：灭火局从满怒气开局，先看 mode 再比数值（防首回合误判）
+const eq = createDuel(EQ_PERSONA);
+if (eq.mode !== 'extinguish') fail('eq 人设应开出灭火局，实际 ' + eq.mode);
+if (eq.anger !== 100) fail('灭火局初始怒气应为 100，实际 ' + eq.anger);
+const firstRound = recordTurn(eq, { userText: '嗯。', aiReply: '……', hitType: 'miss', quip: '' });
+if (firstRound.result) fail('灭火局怒气 100 时不该被 fire 规则误判成 win：' + firstRound.result);
+
+// 5.2 安抚降怒 + 同心结递减
+const r1 = recordTurn(eq, { userText: '我听你说', aiReply: '……', hitType: 'softspot', softspot: EQ_PERSONA.softspots[0], quip: '' });
+if (r1.delta !== -30 || r1.after !== 70) fail('心结命中应 -30 到 70，实际 ' + r1.delta + '/' + r1.after);
+const r2 = recordTurn(eq, { userText: '我听你说', aiReply: '……', hitType: 'softspot', softspot: EQ_PERSONA.softspots[0], quip: '' });
+if (r2.delta !== -15) fail('重复戳同心结应减半 -15，实际 ' + r2.delta);
+const r3 = recordTurn(eq, { userText: '我知道你不好受', aiReply: '……', hitType: 'hit', quip: '' });
+if (r3.delta !== -12) fail('有效安抚应 -12，实际 ' + r3.delta);
+
+// 5.3 降到阈值下判 win：磨到第 5 轮的稳赢给「灭火队员」
+const r4 = recordTurn(eq, { userText: '我错了', aiReply: '……', hitType: 'softspot', softspot: EQ_PERSONA.softspots[1], quip: '' });
+if (r4.result !== 'win') fail('怒气降到阈值下应判 win（当前 ' + r4.after + '）');
+if (pickTitle(eq).name !== '灭火队员') fail('五轮磨下来的灭火胜应给「灭火队员」，实际「' + pickTitle(eq).name + '」');
+
+// 5.3b 四轮内快胜给「读心术大师」：三个心结找齐刚好够到胜线
+const eqFast = createDuel(EQ_PERSONA);
+const fastWin = [
+  ['我听你说', 0],
+  ['我错了', 1],
+  ['给你时间', 2],
+].map(([text, idx]) =>
+  recordTurn(eqFast, { userText: text, aiReply: '……', hitType: 'softspot', softspot: EQ_PERSONA.softspots[idx], quip: '' }),
+);
+const lastFast = fastWin[fastWin.length - 1];
+if (lastFast.result !== 'win') fail('三个心结应降到胜线判 win（实际怒气 ' + lastFast.after + '）');
+if (pickTitle(eqFast).name !== '读心术大师') fail('四轮内灭火胜应给「读心术大师」，实际「' + pickTitle(eqFast).name + '」');
+
+// 5.4 八轮没哄好判 lose（灭火局没有平局）
+const eq2 = createDuel(EQ_PERSONA);
+for (let i = 0; i < 8; i += 1) {
+  recordTurn(eq2, { userText: '嗯。', aiReply: '……', hitType: 'miss', quip: '' });
+}
+if (eq2.result !== 'lose') fail('八轮没哄好应判 lose，实际 ' + eq2.result);
+if (pickTitle(eq2).name !== '火上浇油') fail('灭火失败应给「火上浇油」，实际「' + pickTitle(eq2).name + '」');
+
+// 5.5 火上浇油：怒气反弹 +12，两次直接判负
+const eq3 = createDuel(EQ_PERSONA);
+const b1 = recordTurn(eq3, { userText: '你懂个屁', aiReply: '……', hitType: 'self_destruct', quip: '' });
+if (b1.after !== 100) fail('满怒气下浇油应钉在 100，实际 ' + b1.after);
+const b2 = recordTurn(eq3, { userText: '去死', aiReply: '……', hitType: 'self_destruct', quip: '' });
+if (b2.result !== 'lose') fail('两次自爆应判 lose，实际 ' + b2.result);
+// 从低怒气浇油看得清反弹方向
+const eq4 = createDuel(EQ_PERSONA);
+recordTurn(eq4, { userText: '我听你说', aiReply: '……', hitType: 'softspot', softspot: EQ_PERSONA.softspots[0], quip: '' }); // → 70
+const b3 = recordTurn(eq4, { userText: '你懂个屁', aiReply: '……', hitType: 'self_destruct', quip: '' });
+if (b3.after !== 82) fail('低怒气浇油应反弹 +12 到 82，实际 ' + b3.after);
+console.log('✓ 灭火局：初始 100 / 安抚降怒 / 同心结递减 / ≤20 判 win / 八轮判 lose / 浇油反弹');
+
 
 /* ------------------------------------------------------------------ */
 /* 5. OpenAI 兼容通道：用假 localStorage + 假 fetch 验解析和降级          */

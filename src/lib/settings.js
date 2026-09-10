@@ -46,7 +46,7 @@ export function loadSettings() {
     if (!raw) return { ...DEFAULT_SETTINGS };
     return sanitize(JSON.parse(raw));
   } catch (err) {
-    console.warn('[杠精陪练房] 本地设置读不出来，按未配置处理：', err?.message || err);
+    console.warn('[嘴强王者] 本地设置读不出来，按未配置处理：', err?.message || err);
     return { ...DEFAULT_SETTINGS };
   }
 }
@@ -59,7 +59,7 @@ export function saveSettings(next) {
   try {
     store.setItem(STORAGE_KEY, JSON.stringify(clean));
   } catch (err) {
-    console.warn('[杠精陪练房] 本地设置存不进去：', err?.message || err);
+    console.warn('[嘴强王者] 本地设置存不进去：', err?.message || err);
   }
   return clean;
 }
@@ -69,7 +69,7 @@ export function clearSettings() {
   try {
     store?.removeItem(STORAGE_KEY);
   } catch (err) {
-    console.warn('[杠精陪练房] 本地设置清不掉：', err?.message || err);
+    console.warn('[嘴强王者] 本地设置清不掉：', err?.message || err);
   }
   return { ...DEFAULT_SETTINGS };
 }

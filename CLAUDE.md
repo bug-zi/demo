@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-GANG.AI（杠精陪练房）是一个 Vite 驱动的纯前端中文对话竞技 Demo。玩家选择一个预设人设，通过预设话术或自由输入与对手对线；前端根据命中软肋、有效输出或自爆计算怒气和胜负，并在结束后展示战绩报告和可下载的 PNG 战绩图。默认不需要网络或 API key，本地引擎即可完成完整对局。
+GANG.AI（杠精陪练房）→ 2.0 改名「嘴强王者（TALK KING）」：Vite 驱动的纯前端中文**多场景**对话竞技 Demo。选人屏按场景分三间房——杠精房、谈判房是 fire 点火局（把对方怒气怼到破防），情商房是 extinguish 灭火局（对方怒气 100 起步、哄到消气算赢；当前「即将开放」占位）。通过预设话术或自由输入对线，前端根据命中软肋/心结、有效输出或自爆计算怒气和胜负，结束后展示战绩报告和可下载的 PNG 战绩图。默认不需要网络或 API key，本地引擎即可完成完整对局。注意：localStorage 键仍是 `gang-ai:*`（改名只动展示层，存量玩家数据不迁移）。
 
 ## Commands
 
@@ -38,7 +38,7 @@ Run the headless engine smoke checks (local generation, softspot paths, draw/win
 npm run smoke
 ```
 
-Run the jsdom UI flow check (select persona → submit preset/free text → finish → report):
+Run the jsdom UI flow check (lobby → select persona → duel with mid-duel lobby round-trips → report):
 
 ```bash
 npm run dom-check
@@ -53,11 +53,12 @@ Copy `.env.example` to `.env.local` and set `VITE_LLM_API_KEY` to enable the rem
 ## Architecture
 
 - `index.html` is the application shell. It owns the top bar, engine badge, skin picker, theme toggle, sound toggle, and empty `#screen` mount point; `src/main.js` is the module entry point. A small inline script in `<head>` applies the persisted/system theme and skin before first paint to avoid a flash of the wrong look.
-- `src/main.js` is both the UI state machine and renderer. The main states are `select`, `duel`, and `report`. `render()` clears and rebuilds the active view with the local `h()` DOM helper. Event handlers mutate the shared `state`, and the duel view keeps references to nodes that need incremental updates (anger bar, timer, log, input, etc.). Model/user text is rendered through `textContent`/DOM nodes rather than HTML strings.
-- `src/lib/duel-engine.js` is the deterministic rules layer. `createDuel()` creates per-game state; `localHitType()` and `matchSoftspot()` classify input; `recordTurn()` applies the authoritative anger delta, repeat-softspot diminishing returns, counters, and round record; `judge()` determines `win`, `lose`, or `draw`. Keep numerical game rules here rather than in the model/UI layer.
+- `src/main.js` is both the UI state machine and renderer. The main states are `lobby`, `select`, `duel`, and `report`; `lobby` is the initial screen — a module hall with the duel-module main card (shows a「对局进行中 · 第 N 轮」badge when a duel is live) plus locked「即将开放」cards for unbuilt modules. The select screen groups persona cards by scene category (杠精房/谈判房/情商房 from `src/data/categories.js`); the locked eq group renders a disabled「即将开放」placeholder card. `render()` clears and rebuilds the active view with the local `h()` DOM helper. Event handlers mutate the shared `state`, and the duel view keeps references to nodes that need incremental updates (anger bar, timer, log, input, etc.). Model/user text is rendered through `textContent`/DOM nodes rather than HTML strings. Navigating to the lobby mid-duel never destroys the duel: `viewDuel()` rebuilds the log from `duel.rounds`, the round timer resumes with the remaining seconds, and an in-flight AI turn keeps recording off-screen (`submitTurn()` guards UI updates when `state.screen !== 'duel'`) and is repainted on return.
+- `src/lib/duel-engine.js` is the deterministic rules layer. `createDuel()` creates per-game state; `localHitType()` and `matchSoftspot()` classify input; `recordTurn()` applies the authoritative anger delta, repeat-softspot diminishing returns, counters, and round record; `judge()` determines `win`, `lose`, or `draw`. Duels carry a `mode` from the persona's category: `fire` starts anger at 0 and wins at 100; `extinguish` starts at 100, flips every delta's sign, wins at ≤ `EXTINGUISH_WIN_ANGER` (20), and has no draw (8 unsoothed rounds = lose). `judge()` must branch on `duel.mode` before comparing anger — an extinguish duel opens at 100 and would be misjudged by the fire `≥100 → win` rule. Keep numerical game rules here rather than in the model/UI layer.
 - `src/lib/llm.js` is the generation adapter. `generateTurn()` exposes one common return shape (`reply`, `hitType`, `softspot`, `quip`, `source`) to the UI. The local path uses deterministic rules plus persona templates; the optional remote path dynamically imports `@anthropic-ai/sdk`, sends recent history and a JSON schema, validates the returned `hitType`, and falls back locally on errors. The model suggests a hit type, but `recordTurn()` remains authoritative for anger values.
-- `src/data/personas.js` is the content/configuration layer for the three opponents. Each persona contains identity text, presets, softspot keyword definitions/deltas, stage replies, softspot reactions, and breakdown lines. Add or edit opponents here rather than hard-coding persona behavior in the renderer.
-- `src/data/fallbacks.js` contains hit labels/quips, generic local replies, self-destruct reactions, silence text, and the `pick()` helper. `src/data/titles.js` maps completed duel state to the post-game title/rank.
+- `src/data/personas.js` is the content/configuration layer for the three opponents. Each persona contains identity text, a `category` field (`gang`/`deal`/`eq`, missing falls back to `gang`), presets, softspot keyword definitions/deltas, stage replies, softspot reactions, and breakdown lines. Add or edit opponents here rather than hard-coding persona behavior in the renderer.
+- `src/data/categories.js` is the scene-category registry (`CATEGORIES` + `categoryOf()`): id/name/mode (`fire`|`extinguish`)/hint/locked. Array order is the select-screen group order; a `locked` category with no personas shows the placeholder card.
+- `src/data/fallbacks.js` contains hit labels/quips in two mode sets (fire `HIT_LABELS`/`HIT_QUIPS` and extinguish `EQ_HIT_LABELS`/`EQ_HIT_QUIPS` — the UI picks by `duel.mode`), generic local replies, self-destruct reactions, silence text, and the `pick()` helper. `src/data/titles.js` maps completed duel state to the post-game title/rank via two tables (`TITLES` for fire, `EQ_TITLES` for extinguish; `pickTitle()` branches on `duel.mode`).
 - `src/data/providers.js` defines the remote-AI provider presets (`PROVIDER_OPTIONS`, `presetList`) shown in the settings dialog.
 - `src/lib/dom.js` exports the local `h()` DOM helper; all views and dialogs build nodes through it so generated/user text stays in text nodes.
 - `src/lib/settings.js` loads/saves/clears the remote-AI settings (with key masking) from localStorage.
@@ -69,17 +70,19 @@ Copy `.env.example` to `.env.local` and set `VITE_LLM_API_KEY` to enable the rem
 
 ## Data flow and invariants
 
-A typical turn flows as follows: `submitTurn()` in `main.js` → `generateTurn()` in `llm.js` → `recordTurn()` in `duel-engine.js` → incremental log/anger UI update → `finish()` when `judge()` returns a result → report rendering via `pickTitle()` and optional Canvas export. A new duel is created with `createDuel()`; report actions either reuse the persona or clear the duel and return to selection.
+A typical turn flows as follows: `submitTurn()` in `main.js` → `generateTurn()` in `llm.js` → `recordTurn()` in `duel-engine.js` → incremental log/anger UI update → `finish()` when `judge()` returns a result → report rendering via `pickTitle()` and optional Canvas export. A new duel is created with `createDuel()`; report actions either reuse the persona, clear the duel and return to selection, or return to the lobby (the finished duel is then dropped on the next duel-module entry).
 
-Important current rules are centralized as constants in `duel-engine.js`: maximum 8 rounds, 30 seconds per round, 2 self-destructs to lose, and anger clamped to 0–100. Repeated hits on the same softspot are intentionally reduced. If changing these values or persona keywords, update the smoke/dom checks and the README's gameplay description when applicable.
+Important current rules are centralized as constants in `duel-engine.js`: maximum 8 rounds, 30 seconds per round, 2 self-destructs to lose, anger clamped to 0–100, and `EXTINGUISH_WIN_ANGER = 20` (extinguish win line; extinguish has no draw — 8 unsoothed rounds is a loss). Repeated hits on the same softspot are intentionally reduced. If changing these values or persona keywords, update the smoke/dom checks and the README's gameplay description when applicable.
 
 ## Repository conventions
 
 - Git 操作（add、commit、push、pull、branch、merge 等）全部由用户自己手动完成。Claude Code 不要自动执行任何 git 操作；如认为需要提交或同步，先向用户说明，由用户自行决定并执行。
+- 虽然这个项目是限时黑客松开发项目，但 Claude Code 不需要根据剩余时间来安排或裁剪任务；只需要规划好「这一步做什么、下一步做什么」，时间由开发者自己协调，不要以工期紧张为由催促、砍需求或改变任务优先级。
 - Use native ES modules (`type: module`) and browser-compatible JavaScript; avoid introducing a framework unless the project direction explicitly changes.
 - Keep persona copy and balance data in `src/data/`, rules in `src/lib/duel-engine.js`, model integration in `src/lib/llm.js`, and DOM orchestration in `src/main.js`.
 - Preserve the local fallback path so the demo remains playable offline and remote failures do not interrupt a game.
 - Preserve the existing safe DOM rendering approach: generated/user text must remain text nodes, not interpolated `innerHTML`.
+- 愿景叙事只进文档不进 demo：demo 只演已建成的模块（未落地入口显示「即将开放」），平台愿景放在项目文档/介绍文档里讲，不在界面里画饼。
 - The product and design rationale are in `docs/杠精陪练房-创作计划书.md`; contest requirements and submission checks are in `docs/黑客松要求.md`. The candidate-topic discussion is in `docs/draft/archive/寻找合适选题.md`. The docs hub and folder conventions are in `docs/README.md`.
 
 ## 开发日志约定

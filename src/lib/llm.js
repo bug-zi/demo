@@ -133,7 +133,7 @@ function buildSystemPrompt(persona, duel) {
     .join('\n');
 
   return [
-    `你在一款叫「杠精陪练房」的游戏里扮演一个角色，正在和玩家对线。`,
+    `你在一款叫「嘴强王者」的游戏里扮演一个角色，正在和玩家对线。`,
     ``,
     `# 你的角色`,
     `名字：${persona.name}`,
@@ -351,7 +351,7 @@ async function openAiTurn(config, ctx) {
 
   if (jsonModeFailed) {
     if (response.ok) jsonModeUnsupported.add(key);
-    console.warn(`[杠精陪练房] ${config.model} 不吃 response_format，改用它自己的 JSON 输出。`);
+    console.warn(`[嘴强王者] ${config.model} 不吃 response_format，改用它自己的 JSON 输出。`);
     response = await postChat(config, openAiBody(config, ctx, false));
     data = response.ok ? await response.json() : null;
   }
@@ -363,7 +363,7 @@ async function openAiTurn(config, ctx) {
 
   // 说人话不说 JSON：再顶一次要求，多半就老实了
   if (content && !looksLikeJson(content)) {
-    console.warn(`[杠精陪练房] ${config.model} 没按 JSON 回，追加一次提醒。它说的是：`, content.slice(0, 120));
+    console.warn(`[嘴强王者] ${config.model} 没按 JSON 回，追加一次提醒。它说的是：`, content.slice(0, 120));
     const strict = await postChat(config, openAiBody(config, ctx, false, true));
     if (strict.ok) {
       const strictData = await strict.json();
@@ -441,13 +441,13 @@ export async function generateTurn({ persona, duel, userText }) {
           : await openAiTurn(config, ctx);
       if (turn.reply) return turn;
       // 模型回了个空字符串，JSON 解析没抛错但没法用
-      console.warn('[杠精陪练房] 真实 AI 返回了空台词，已降级到本地引擎');
+      console.warn('[嘴强王者] 真实 AI 返回了空台词，已降级到本地引擎');
       return { ...localTurn(ctx), fallback: '模型返回了空台词' };
     } catch (err) {
       // 完整错误留给控制台，界面只显示翻译过的一句话。
       // 带上渠道和模型名 —— 排查时第一句要问的就是「哪条路、哪个模型」。
       console.warn(
-        `[杠精陪练房] 真实 AI 调用失败（${config.provider} / ${config.model || '默认模型'}），已降级到本地引擎：`,
+        `[嘴强王者] 真实 AI 调用失败（${config.provider} / ${config.model || '默认模型'}），已降级到本地引擎：`,
         err,
       );
       return { ...localTurn(ctx), fallback: describeError(err) };

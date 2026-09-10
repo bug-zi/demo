@@ -1,13 +1,15 @@
 /**
- * 杠精陪练房 · 主状态机
+ * 嘴强王者 · 主状态机
  *
- * PERSONA_SELECT → DUEL(1..8) → REPORT → PERSONA_SELECT
+ * LOBBY → SELECT(三房分组) → DUEL(1..8, 点火/灭火) → REPORT
+ * 大厅随时可去，进行中的对局不销毁（记录在 state.duel，回来重建）。
  *
  * 所有模型产出都走 textContent 落地，绝不拼 HTML（见计划书 §6.5）。
  */
 
 import { PERSONAS, getPersona } from './data/personas.js';
-import { HIT_LABELS, SILENCE_TEXT } from './data/fallbacks.js';
+import { CATEGORIES, categoryOf } from './data/categories.js';
+import { HIT_LABELS, EQ_HIT_LABELS, SILENCE_TEXT } from './data/fallbacks.js';
 import { pickTitle } from './data/titles.js';
 import {
   MAX_ROUNDS,
@@ -24,16 +26,28 @@ import { blip, isSoundEnabled, setSoundEnabled } from './lib/audio.js';
 import { h } from './lib/dom.js';
 import { openSettings } from './ui/settings-dialog.js';
 import { toggleSkinPopover } from './ui/skin-popover.js';
+import { createLibraryView } from './ui/library.js';
+import {
+  loadFavorites,
+  loadNotes,
+  saveFavorites,
+  saveNotes,
+  toggleFavorite,
+  upsertNote,
+  deleteNote,
+} from './lib/notes.js';
 import { initTheme, initSkin, toggleTheme, onTheme } from './lib/theme.js';
 
 const screenEl = document.getElementById('screen');
 
 const state = {
-  screen: 'select',
+  screen: 'lobby',
   duel: null,
   busy: false,
   timerId: null,
   secondsLeft: ROUND_SECONDS,
+  favorites: loadFavorites(),
+  notes: loadNotes(),
 };
 
 /** 当前屏幕里需要原地更新的节点。 */
@@ -57,9 +71,134 @@ function render() {
   for (const key of Object.keys(refs)) delete refs[key];
   screenEl.replaceChildren();
 
-  if (state.screen === 'select') screenEl.append(viewSelect());
+  if (state.screen === 'lobby') screenEl.append(viewLobby());
+  else if (state.screen === 'select') screenEl.append(viewSelect());
   else if (state.screen === 'duel') screenEl.append(viewDuel());
   else if (state.screen === 'report') screenEl.append(viewReport());
+  else if (state.screen === 'library') screenEl.append(libraryView());
+}
+
+/* ------------------------------------------------------------------ */
+/* 大厅                                                                */
+/* ------------------------------------------------------------------ */
+
+function viewLobby() {
+  const activeDuel = state.duel && !state.duel.result ? state.duel : null;
+  return h(
+    'section',
+    { class: 'lobby' },
+    h(
+      'div',
+      { class: 'lobby-head' },
+      h('h1', { class: 'hero-title', text: '今天想跟谁练练？' }),
+      h('p', { class: 'hero-sub', text: '对线房三间都已亮灯，先从最热闹那间开始。' }),
+    ),
+    h(
+      'div',
+      { class: 'lobby-grid' },
+      h(
+        'button',
+        {
+          class: 'module-card primary',
+          type: 'button',
+          onclick: enterDuelModule,
+        },
+        h(
+          'div',
+          { class: 'module-top' },
+          h('span', { class: 'module-name', text: '对线房' }),
+          activeDuel
+            ? h('span', {
+                class: 'module-badge live',
+                text: `对局进行中 · 第 ${currentRound(activeDuel)} 轮`,
+              })
+            : null,
+        ),
+        h('p', { class: 'module-desc', text: '选个对手开练：点火破防，或灭火哄人。' }),
+      ),
+      h(
+        'button',
+        {
+          class: 'module-card library',
+          type: 'button',
+          onclick: enterLibrary,
+        },
+        h(
+          'div',
+          { class: 'module-top' },
+          h('span', { class: 'module-name', text: '话术资料库' }),
+        ),
+        h('p', { class: 'module-desc', text: '回怼话术随身查阅，收藏自己的必杀句。' }),
+      ),
+      lockedCard('好友擂台', '同一块屏幕，两个人，AI 当裁判。'),
+    ),
+    h('p', {
+      class: 'footnote',
+      text: '后面的房间正在装修，先把对面说破防再回来。',
+    }),
+    isRemote() ? null : connectHint(),
+  );
+}
+
+/** 未落地模块的卡：可看不可点，不做死链。 */
+function lockedCard(name, desc) {
+  return h(
+    'button',
+    { class: 'module-card locked', type: 'button', disabled: true },
+    h(
+      'div',
+      { class: 'module-top' },
+      h('span', { class: 'module-name', text: name }),
+      h('span', { class: 'module-badge', text: '即将开放' }),
+    ),
+    h('p', { class: 'module-desc', text: desc }),
+  );
+}
+
+/** 大厅主卡：有活局就续，没有就进选人（顺手弃掉已结束的旧局）。 */
+function enterDuelModule() {
+  if (state.duel && !state.duel.result) {
+    state.screen = 'duel';
+  } else {
+    state.duel = null;
+    state.screen = 'select';
+  }
+  render();
+}
+
+function goLobby() {
+  state.screen = 'lobby';
+  render();
+}
+
+/* ------------------------------------------------------------------ */
+/* 话术资料库                                                          */
+/* ------------------------------------------------------------------ */
+
+function enterLibrary() {
+  state.screen = 'library';
+  render();
+}
+
+/** 资料库视图：数据在 state，持久化在回调里做完，视图自管筛选与重绘。 */
+function libraryView() {
+  return createLibraryView({
+    getFavorites: () => state.favorites,
+    getNotes: () => state.notes,
+    onToggleFavorite: (id) => {
+      state.favorites = toggleFavorite(state.favorites, id);
+      saveFavorites(state.favorites);
+    },
+    onSaveNote: (draft) => {
+      state.notes = upsertNote(state.notes, draft);
+      saveNotes(state.notes);
+    },
+    onDeleteNote: (id) => {
+      state.notes = deleteNote(state.notes, id);
+      saveNotes(state.notes);
+    },
+    onBack: goLobby,
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -70,21 +209,56 @@ function viewSelect() {
   return h(
     'section',
     { class: 'select' },
+    h('button', { class: 'back-btn', type: 'button', text: '← 大厅', onclick: goLobby }),
     h(
       'div',
       { class: 'select-head' },
-      h('h1', { class: 'hero-title', text: '把对面说破防' }),
+      h('h1', { class: 'hero-title', text: '选个对手开练' }),
       h('p', {
         class: 'hero-sub',
-        text: '选一个对手。你的目标不是把道理讲赢——是让他先绷不住。',
+        text: '点火房把 TA 说到破防；灭火房把 TA 哄到消气。',
       }),
     ),
-    h('div', { class: 'persona-grid' }, PERSONAS.map(personaCard)),
+    ...CATEGORIES.map(categoryGroup),
     h('p', {
       class: 'footnote',
       text: '每个人都有软肋，藏着的那种。但话说太冲，先破防的可能是你自己。',
     }),
     isRemote() ? null : connectHint(),
+  );
+}
+
+/** 选人屏的一间房：组头（房名 + 模式提示）+ 组内人设卡；空的可玩分组不渲染。 */
+function categoryGroup(category) {
+  const members = PERSONAS.filter((p) => categoryOf(p).id === category.id);
+  if (!category.locked && members.length === 0) return null;
+  return h(
+    'div',
+    { class: 'category-group' },
+    h(
+      'div',
+      { class: 'category-head' },
+      h('span', { class: 'category-name', text: category.name }),
+      h('span', { class: 'category-hint', text: category.hint }),
+    ),
+    category.locked && members.length === 0
+      ? lockedPersonaCard()
+      : h('div', { class: 'persona-grid' }, members.map(personaCard)),
+  );
+}
+
+/** 未开放分组的占位卡：可看不可点，不做死链（同大厅锁定卡精神）。 */
+function lockedPersonaCard() {
+  return h(
+    'button',
+    { class: 'persona-card locked', type: 'button', disabled: true },
+    h(
+      'div',
+      { class: 'persona-top' },
+      h('span', { class: 'persona-name', text: '哄人 / 说服' }),
+      h('span', { class: 'module-badge', text: '即将开放' }),
+    ),
+    h('p', { class: 'persona-intro', text: '灭火局：对方正在气头上，把 TA 哄到消气。' }),
   );
 }
 
@@ -226,6 +400,7 @@ function viewDuel() {
     h(
       'div',
       { class: 'duel-head' },
+      h('button', { class: 'back-btn duel-exit', type: 'button', text: '← 大厅', onclick: goLobby }),
       h(
         'div',
         { class: 'duel-who' },
@@ -263,10 +438,18 @@ function viewDuel() {
   );
 
   requestAnimationFrame(() => {
+    // 进屏后一帧内就回大厅的话，refs 已被 render() 清空 —— 别碰了
+    if (state.screen !== 'duel') return;
     scrollLogToBottom();
-    refs.input.focus();
+    refs.input?.focus();
   });
-  startTimer();
+  // 新开局走满 30s；从大厅续局则接着剩余秒数走，不偷偷回满
+  if (state.secondsLeft > 0 && state.secondsLeft < ROUND_SECONDS) {
+    paintTimer();
+    resumeTimer();
+  } else {
+    startTimer();
+  }
   return root;
 }
 
@@ -295,6 +478,8 @@ function fallbackLine(reason) {
 }
 
 function quipLine(round) {
+  const isEq = state.duel?.mode === 'extinguish';
+  const labels = isEq ? EQ_HIT_LABELS : HIT_LABELS;
   const sign = round.delta > 0 ? '+' : '';
   const tagIcon =
     round.hitType === 'softspot'
@@ -305,7 +490,7 @@ function quipLine(round) {
   return h(
     'div',
     { class: `quip quip-${round.hitType}` },
-    h('span', { class: 'quip-tag' }, tagIcon, HIT_LABELS[round.hitType] || '回合'),
+    h('span', { class: 'quip-tag' }, tagIcon, labels[round.hitType] || '回合'),
     h('span', { class: 'quip-text', text: `${round.quip || ''} ${sign}${round.delta}` }),
   );
 }
@@ -348,7 +533,7 @@ async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
   try {
     turn = await generateTurn({ persona: state.duel.persona, duel: state.duel, userText });
   } catch (err) {
-    console.error('[杠精陪练房] 生成失败：', err);
+    console.error('[嘴强王者] 生成失败：', err);
     turn = { reply: '……', hitType: 'miss', quip: '', softspot: null };
   }
 
@@ -363,6 +548,17 @@ async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
     usedPreset: preset,
     silent: timeout,
   });
+
+  // 玩家中途回了大厅：回合照常记账（上面已入 state.duel），界面等回来再补画
+  if (state.screen !== 'duel') {
+    if (result) {
+      state.duel.result = result;
+      // 大厅主卡的「对局进行中」角标是离场快照 —— 胜负落账后刷新掉
+      if (state.screen === 'lobby') render();
+    }
+    state.busy = false;
+    return;
+  }
 
   refs.log.append(bubbleAI(turn.reply));
   if (turn.fallback) refs.log.append(fallbackLine(turn.fallback));
@@ -410,19 +606,32 @@ function updateAngerUI() {
 
 async function finish(result) {
   const { duel } = state;
+  const isEq = duel.mode === 'extinguish';
   duel.result = result;
   stopTimer();
 
   if (result === 'win') {
     blip('breakdown');
-    refs.log.append(h('div', { class: 'system-line', text: '—— 他绷不住了 ——' }));
-    for (const line of duel.persona.breakdown) {
-      refs.log.append(bubbleAI(line));
+    if (isEq) {
+      refs.log.append(h('div', { class: 'system-line', text: '—— TA 消气了 ——' }));
+      for (const line of duel.persona.breakdown) {
+        refs.log.append(bubbleAI(line));
+      }
+      refs.log.append(h('div', { class: 'system-line', text: '对话安静了下来' }));
+    } else {
+      refs.log.append(h('div', { class: 'system-line', text: '—— 他绷不住了 ——' }));
+      for (const line of duel.persona.breakdown) {
+        refs.log.append(bubbleAI(line));
+      }
+      refs.log.append(h('div', { class: 'system-line', text: '对方已退出群聊' }));
     }
-    refs.log.append(h('div', { class: 'system-line', text: '对方已退出群聊' }));
   } else if (result === 'lose') {
-    refs.log.append(h('div', { class: 'system-line', text: '—— 你先绷不住了 ——' }));
-    refs.log.append(h('div', { class: 'system-line', text: '你被反杀了' }));
+    if (isEq) {
+      refs.log.append(h('div', { class: 'system-line', text: '—— 这局没哄好 ——' }));
+    } else {
+      refs.log.append(h('div', { class: 'system-line', text: '—— 你先绷不住了 ——' }));
+      refs.log.append(h('div', { class: 'system-line', text: '你被反杀了' }));
+    }
   } else {
     refs.log.append(h('div', { class: 'system-line', text: '—— 八轮打完，谁也没破防 ——' }));
   }
@@ -485,10 +694,23 @@ const RESULT_COPY = {
   draw: { headline: '打平', sub: '八轮打完，谁也没能破防。' },
 };
 
+/** 灭火局（情商房）版本：lose 含自爆与超时，没有平局。 */
+const EQ_RESULT_COPY = {
+  win: { headline: 'TA 消气了', sub: '你把这场架温柔地摁灭了。' },
+  lose: { headline: '没哄好', sub: '越哄越炸，或者时间到了。' },
+};
+
+function resultCopyOf(duel) {
+  if (duel.mode !== 'extinguish') return RESULT_COPY[duel.result] || RESULT_COPY.draw;
+  return EQ_RESULT_COPY[duel.result] || EQ_RESULT_COPY.lose;
+}
+
 function viewReport() {
   const { duel } = state;
   const title = pickTitle(duel);
-  const copy = RESULT_COPY[duel.result] || RESULT_COPY.draw;
+  const copy = resultCopyOf(duel);
+  const isEq = duel.mode === 'extinguish';
+  const labels = isEq ? EQ_HIT_LABELS : HIT_LABELS;
   const hits = uniqueSoftspotHits(duel);
 
   return h(
@@ -519,7 +741,7 @@ function viewReport() {
       ` ${duel.persona.name}`,
     ]),
       stat('回合数', `${duel.rounds.length} / ${MAX_ROUNDS}`),
-      stat('软肋命中', `${hits} / ${duel.persona.softspots.length}`),
+      stat(isEq ? '心结命中' : '软肋命中', `${hits} / ${duel.persona.softspots.length}`),
       stat('自爆次数', `${duel.selfDestructs} / ${MAX_SELF_DESTRUCTS}`),
       stat('最终怒气', `${duel.anger} / 100`),
       stat('引擎', engineLabel()),
@@ -542,7 +764,7 @@ function viewReport() {
               : round.hitType === 'self_destruct'
                 ? h('span', { class: 'icon i-bolt', 'aria-hidden': 'true' })
                 : null,
-            `${HIT_LABELS[round.hitType] || '回合'} ${round.delta > 0 ? '+' : ''}${round.delta}`,
+            `${labels[round.hitType] || '回合'} ${round.delta > 0 ? '+' : ''}${round.delta}`,
           ),
         ),
       ),
@@ -552,6 +774,7 @@ function viewReport() {
       { class: 'report-actions' },
       h('button', { class: 'btn primary', type: 'button', text: '再来一局', onclick: () => startDuel(duel.personaId) }),
       h('button', { class: 'btn', type: 'button', text: '换个对手', onclick: () => goSelect() }),
+      h('button', { class: 'btn', type: 'button', text: '返回大厅', onclick: goLobby }),
       h('button', { class: 'btn', type: 'button', text: '保存战绩图', onclick: exportCard }),
     ),
   );
@@ -580,7 +803,8 @@ function exportCard() {
   const { duel } = state;
   if (!duel) return;
   const title = pickTitle(duel);
-  const copy = RESULT_COPY[duel.result] || RESULT_COPY.draw;
+  const copy = resultCopyOf(duel);
+  const isEq = duel.mode === 'extinguish';
 
   const W = 720;
   const H = 1000;
@@ -610,7 +834,7 @@ function exportCard() {
 
   ctx.fillStyle = C.muted;
   ctx.font = '20px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
-  ctx.fillText('杠精陪练房 · GANG.AI', 60, 90);
+  ctx.fillText('嘴强王者 · TALK KING', 60, 90);
 
   ctx.fillStyle = C.text;
   ctx.font = 'bold 56px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
@@ -638,9 +862,10 @@ function exportCard() {
     ['自爆次数', `${duel.selfDestructs} / ${MAX_SELF_DESTRUCTS}`],
     ['最终怒气', `${duel.anger} / 100`],
   ];
+  const exportRows = isEq ? rows.map((r) => (r[0] === '软肋命中' ? ['心结命中', r[1]] : r)) : rows;
   let y = 550;
   ctx.font = '24px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
-  for (const [label, value] of rows) {
+  for (const [label, value] of exportRows) {
     ctx.fillStyle = C.muted;
     ctx.fillText(label, 60, y);
     ctx.fillStyle = C.text;
@@ -658,7 +883,7 @@ function exportCard() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `杠精陪练房-${title.name}.png`;
+    link.download = `嘴强王者-${title.name}.png`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, 'image/png');
@@ -695,8 +920,8 @@ function openSettingsDialog() {
     onResume: resumeTimer,
     onChange: () => {
       repaintEngine();
-      // 只有停在选人屏时才重绘 —— 对线中途重绘会清掉聊天记录
-      if (state.screen === 'select') render();
+      // 只有停在大厅/选人屏时才重绘 —— 对线中途重绘会清掉聊天记录
+      if (state.screen === 'lobby' || state.screen === 'select') render();
     },
   });
 }

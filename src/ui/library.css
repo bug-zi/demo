@@ -1,0 +1,234 @@
+/* 话术资料库样式 —— 由 library.js 自行 import（Phase A 与 2.0 并行，不碰 styles.css）。
+   只定义新类、不覆写既有类；只用四态令牌（2 皮肤 × 2 深浅自动适配），零写死色。 */
+
+.library {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(720px, 100%);
+  margin: 0 auto;
+}
+
+.library-head .lib-tools {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.note-add-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 16px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.note-add-btn:hover {
+  background: var(--accent-hover);
+}
+
+.library-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lib-chip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 12px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.lib-chip.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.lib-search {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.lib-search:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.library-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.entry-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.entry-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.entry-main .entry-text {
+  flex: 1;
+  margin: 0;
+  color: var(--text);
+  font-weight: 500;
+  line-height: 1.6;
+}
+
+.mine-badge {
+  flex: none;
+  border-radius: 6px;
+  padding: 2px 8px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.fav-btn,
+.entry-actions button {
+  flex: none;
+  border: none;
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.fav-btn:hover,
+.entry-actions button:hover {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.fav-btn.on {
+  color: var(--accent-strong);
+  font-size: 1.05rem;
+}
+
+.entry-meta {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.entry-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.tag {
+  border-radius: 999px;
+  padding: 1px 8px;
+  background: var(--surface-deep);
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.lib-empty {
+  margin: 24px 0;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* composer 表单 */
+.note-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  background: var(--surface-deep);
+}
+
+.note-form textarea,
+.note-form input {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.nf-row {
+  display: flex;
+  gap: 8px;
+}
+
+.nf-row select {
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.nf-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.note-save-btn {
+  border: none;
+  border-radius: 10px;
+  padding: 8px 18px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.note-save-btn:hover {
+  background: var(--accent-hover);
+}
+
+.note-cancel-btn {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 18px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.form-error {
+  margin: 0;
+  color: var(--hit-self-destruct);
+  font-size: 0.85rem;
+}
