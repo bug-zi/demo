@@ -8,22 +8,22 @@
   --panel-2: #221e1a;
   --bubble-ai: #26221e;
   --bubble-me: #2e3a2e;
-  --anger: #ff4d4d;
+  --danger: #ff4d4d;
   --text: #ededed;
   --muted: #8a8078;
   --accent: #ffd24a;
   --line: #2e2924;
 
-  /* 落在 accent / anger 底色上的文字 */
+  /* 落在 accent / danger 底色上的文字 */
   --accent-ink: #241f14;
   /* 半透明的同类色底，用于标签、提示条 */
   --accent-soft: rgba(255, 210, 74, 0.16);
   --accent-tint: rgba(255, 210, 74, 0.1);
   --accent-line: rgba(255, 210, 74, 0.28);
-  --anger-soft: rgba(255, 77, 77, 0.16);
-  --anger-faint: rgba(255, 77, 77, 0.14);
+  --danger-soft: rgba(255, 77, 77, 0.16);
+  --danger-faint: rgba(255, 77, 77, 0.14);
 
-  /* 情绪四档：CSS 和对线屏的怒气条共用这一份 */
+  /* 情绪四档：CSS 和对线屏的破防值条共用这一份 */
   --stage-polite: #8fa88f;
   --stage-sarcastic: #ffd24a;
   --stage-agitated: #ff9a4d;
@@ -34,7 +34,11 @@
   --track-tick: rgba(18, 16, 14, 0.8);
 
   --radius: 14px;
-  --font: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  /* 末尾挂一串 emoji 字体：缺了它们，某些中文字体会把彩色 emoji 顶成黑白方块 */
+  --font: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC',
+    'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+  /* 表情按钮专用：emoji 字体排在前面，别让中文字体抢走字形 */
+  --font-emoji: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
 }
 
 /* 亮色：暖白纸感，避开纯白 + 纯黑（那才是刺眼的来源）。
@@ -45,7 +49,7 @@
   --panel-2: #efe8dc;
   --bubble-ai: #f0e9dd;
   --bubble-me: #e2ecdb;
-  --anger: #bc4b3b;
+  --danger: #bc4b3b;
   --text: #33302b;
   --muted: #70685e;
   --accent: #8e6010;
@@ -55,8 +59,8 @@
   --accent-soft: rgba(142, 96, 16, 0.12);
   --accent-tint: rgba(142, 96, 16, 0.07);
   --accent-line: rgba(142, 96, 16, 0.3);
-  --anger-soft: rgba(188, 75, 59, 0.12);
-  --anger-faint: rgba(188, 75, 59, 0.1);
+  --danger-soft: rgba(188, 75, 59, 0.12);
+  --danger-faint: rgba(188, 75, 59, 0.1);
 
   --stage-polite: #537853;
   --stage-sarcastic: #906909;
@@ -463,7 +467,7 @@ body {
 }
 
 .modal-status.is-error {
-  color: var(--anger);
+  color: var(--danger);
 }
 
 .modal-actions {
@@ -520,17 +524,17 @@ body {
 }
 
 .timer-label.urgent {
-  color: var(--anger);
+  color: var(--danger);
   font-weight: 700;
 }
 
-/* 怒气条 */
+/* 破防值条（meter，不是「怒气」了） */
 
-.anger {
+.meter {
   padding-bottom: 12px;
 }
 
-.anger-head {
+.meter-head {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -539,7 +543,7 @@ body {
   color: var(--muted);
 }
 
-.anger-num {
+.meter-num {
   font-size: 15px;
   font-weight: 700;
   color: var(--text);
@@ -565,10 +569,10 @@ body {
   color: var(--stage-agitated);
 }
 .stage-pill.stage-breakdown {
-  color: var(--anger);
+  color: var(--danger);
 }
 
-.anger-track {
+.meter-track {
   position: relative;
   height: 10px;
   border-radius: 999px;
@@ -576,7 +580,7 @@ body {
   overflow: hidden;
 }
 
-.anger-fill {
+.meter-fill {
   height: 100%;
   width: 0;
   border-radius: 999px;
@@ -584,7 +588,7 @@ body {
   transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1), background 0.4s;
 }
 
-.anger-tick {
+.meter-tick {
   position: absolute;
   top: 0;
   width: 1px;
@@ -703,8 +707,8 @@ body {
 }
 
 .quip-self_destruct .quip-tag {
-  background: var(--anger-soft);
-  color: var(--anger);
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 /* 选人屏的难度选择器：只改输入时限，不动胜负规则 */
@@ -750,8 +754,8 @@ body {
 .fallback-tag {
   padding: 1px 8px;
   border-radius: 999px;
-  background: var(--anger-faint);
-  color: var(--anger);
+  background: var(--danger-faint);
+  color: var(--danger);
   white-space: nowrap;
 }
 
@@ -807,6 +811,19 @@ body {
   text-decoration: line-through;
 }
 
+/* 输入框还剩多少字。emoji 占两个单位，这个数得让玩家看见 */
+.counter {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.counter.is-near {
+  color: var(--danger);
+}
+
 .input-row {
   display: flex;
   gap: 10px;
@@ -835,6 +852,93 @@ body {
 
 .input:disabled {
   opacity: 0.55;
+}
+
+/* 表情面板 */
+
+.picker {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.emoji-btn {
+  width: 54px;
+  height: 54px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  font-family: var(--font-emoji);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.emoji-btn:hover:not(:disabled),
+.emoji-btn[aria-expanded='true'] {
+  border-color: var(--accent);
+}
+
+.emoji-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* 从按钮往上弹 —— 输入框在最底下，往下弹会掉出屏幕 */
+.emoji-panel {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  z-index: 5;
+  width: min(344px, calc(100vw - 56px));
+  max-height: min(52vh, 430px);
+  overflow-y: auto;
+  padding: 12px 14px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  box-shadow: 0 18px 40px var(--shadow);
+}
+
+.emoji-panel[hidden] {
+  display: none;
+}
+
+/* 27 个铺三行九列，不打小标题 —— 语气靠顺序分组，不靠文字 */
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 2px;
+}
+
+.emoji-item {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-family: var(--font-emoji);
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s, transform 0.12s;
+}
+
+.emoji-item:hover {
+  background: var(--accent-soft);
+  transform: scale(1.15);
+}
+
+.emoji-note {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.emoji-note.is-full {
+  color: var(--danger);
 }
 
 .send-btn {
@@ -891,8 +995,8 @@ body {
 }
 
 .result-lose {
-  background: var(--anger-soft);
-  color: var(--anger);
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .result-draw {
@@ -1003,14 +1107,23 @@ body {
   color: var(--muted);
 }
 
+/* 这条加分账：查表那 80% 和判断那 20% 各出了多少 */
+.replay-math {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
 .tag-softspot {
   background: var(--accent-soft);
   color: var(--accent);
 }
 
 .tag-self_destruct {
-  background: var(--anger-soft);
-  color: var(--anger);
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .report-actions {

@@ -1,7 +1,17 @@
 // 冒烟测试：不开浏览器，直接跑引擎 + 本地大脑，验证四条路径都能走通。
 // 用法：npm run smoke
-import { PERSONAS } from '../src/data/personas.js';
-import { createDuel, recordTurn, uniqueSoftspotHits, stageOf } from '../src/lib/duel-engine.js';
+import { PERSONAS, getPersona } from '../src/data/personas.js';
+import {
+  createDuel,
+  localHitType,
+  localJudge,
+  recordTurn,
+  uniqueSoftspotHits,
+  stageOf,
+  blendDelta,
+  clampJudge,
+} from '../src/lib/duel-engine.js';
+import { MAX_INPUT, clip, stripEmoji } from '../src/lib/text.js';
 import { generateTurn, engineLabel, testConnection } from '../src/lib/llm.js';
 import { saveSettings } from '../src/lib/settings.js';
 import { pickTitle } from '../src/data/titles.js';
@@ -29,7 +39,7 @@ async function play(personaId, lines, label, presetCount = 0) {
     });
     console.log(
       `第${record.round}轮 [${record.hitType}] ${record.delta >= 0 ? '+' : ''}${record.delta} ` +
-        `→ 怒气 ${record.angerAfter} (${stageOf(duel.anger).label}) | ${turn.reply}`
+        `→ 破防值 ${record.breakdownAfter} (${stageOf(duel.breakdown).label}) | ${turn.reply}`
     );
     if (result) console.log('结果:', result);
   }
@@ -41,19 +51,24 @@ async function play(personaId, lines, label, presetCount = 0) {
 }
 
 // 1. 演示路径：三个预设 + 一句自己的话，应该刚好破百
-await play('qinqi', [
+// 加了 20% 的判断分之后这两条路径必须还成立 —— 配平是 demo 的命根子
+const demo = await play('qinqi', [
   '您家孩子现在在哪儿高就啊？',
   '姑姑这红包您先收着',
   '您先给我示范一下怎么成功呗',
   '但是您当年不也是这么过来的吗？',
 ], '演示路径', 3);
+if (demo.result !== 'win') fail('演示路径应该在第 4 轮破百，实际 ' + demo.result);
+if (demo.breakdown !== 100) fail('演示路径赢了就该正好 100，实际 ' + demo.breakdown);
 
 // 2. 只点预设，不补刀：应该停在 90 打平
-await play('qinqi', [
+const presetsOnly = await play('qinqi', [
   '您家孩子现在在哪儿高就啊？',
   '姑姑这红包您先收着',
   '您先给我示范一下怎么成功呗',
 ], '只点预设', 3);
+if (presetsOnly.result !== 'draw') fail('只点预设应该打平，实际 ' + presetsOnly.result);
+if (presetsOnly.breakdown !== 90) fail('只点预设应该正好停在 90，实际 ' + presetsOnly.breakdown);
 
 // 3. 三个软肋各验一次：确认每套预设都能被自己的关键词认出来
 for (const p of PERSONAS) {
@@ -277,3 +292,136 @@ if (theme.nextTheme('dark') !== 'light' || theme.nextTheme('light') !== 'dark') 
 }
 if (theme.applyTheme('light') !== 'light') fail('applyTheme 应该返回生效的主题');
 console.log('✓ 主题：无 localStorage / 无 document 时不炸，非法值收敛到暗色');
+
+/* ------------------------------------------------------------------ */
+/* 7. 表情：只表达语气，不参与判定                                        */
+/* ------------------------------------------------------------------ */
+
+const p = getPersona('qinqi'); // 用有明确关键词软肋的那个，「您家孩子」是它的
+
+// 9 个 emoji = 18 个 UTF-16 单元，正好撞上「够长了算有效输出」那条线。
+// 不摘掉的话，点九下表情就白拿一次 +12 —— 比打字便宜太多，等于刷分器
+if (stripEmoji('😏') !== '') fail('stripEmoji 没认出 emoji');
+if (localHitType(p, '😏'.repeat(9)) !== 'miss') {
+  fail('纯表情不该算有效输出，实际 ' + localHitType(p, '😏'.repeat(9)));
+}
+if (localHitType(p, '😏🙄😂🤣💀🤡👏🙃🫠') !== 'miss') fail('纯表情也不该自爆');
+// 反过来，表情不能把真正的论点一起吃掉
+if (localHitType(p, '您家孩子现在在哪儿高就啊？😏') !== 'softspot') fail('带表情的软肋句应该照样算软肋');
+if (localHitType(p, '但是你自己上次也这么说的吧😅') !== 'hit') fail('带表情的论点应该照样算有效输出');
+console.log('✓ 表情不参与判定：纯表情算 miss，带表情的软肋/论点照常算');
+
+// clip 不能把 emoji 从中间劈开 —— 孤立代理项在界面上就是个「�」
+const cutTail = clip('a' + '😏'.repeat(60), MAX_INPUT);
+if (cutTail.length !== 99) fail('应该往后退一格避开代理对，实际长度 ' + cutTail.length);
+for (const s of [cutTail, clip('😏'.repeat(60), MAX_INPUT), clip('短', MAX_INPUT)]) {
+  if (/[\uD800-\uDBFF]$/.test(s)) fail('clip 切出了孤立的高代理项');
+}
+if (clip('说得对', MAX_INPUT) !== '说得对') fail('没超上限不该动原文');
+console.log('✓ clip 按上限裁剪，不会把 emoji 劈成半个');
+
+/* ------------------------------------------------------------------ */
+/* 8. 破防值 = 查表 80% + 判断 20%                                       */
+/* ------------------------------------------------------------------ */
+
+const judgePersona = getPersona('qinqi');
+
+// 判断分等于查表值时，结果必须原样等于查表值 ——
+// 老数值（软肋 32/28/30、hit 12、自爆 −12）全靠这条才没走样
+for (const t of [34, 32, 30, 12, 0, -12]) {
+  if (blendDelta(t, t) !== t) fail(`判断分跟查表值一致时应该原样保留 ${t}，实际 ${blendDelta(t, t)}`);
+}
+// 20% 真的在起作用：同样一个 hit，判断分高低给出不同的增量
+if (blendDelta(12, 12) !== 12) fail('判断分 12 时应该还是 12');
+if (blendDelta(12, 35) !== 17) fail('判断分拉满时应该到 17，实际 ' + blendDelta(12, 35));
+if (blendDelta(12, -15) !== 7) fail('判断分垫底时应该掉到 7，实际 ' + blendDelta(12, -15));
+console.log('✓ 80/20 配比：判断分与查表值一致时数值不变，偏离时最多上下浮动 20%');
+
+// 夹死上下界：模型返回 999 不能一回合把破防值顶满，那是「模型抽风也坏不了游戏」的底线
+if (clampJudge(999) !== 35) fail('判断分上限没夹住：' + clampJudge(999));
+if (clampJudge(-999) !== -15) fail('判断分下限没夹住：' + clampJudge(-999));
+if (clampJudge('abc') !== null || clampJudge(undefined) !== null) fail('非数字应该返回 null');
+if (clampJudge(29.6) !== 30) fail('小数应该四舍五入');
+console.log('✓ 判断分夹在 -15 ~ 35：模型返回 999 也只能撬动 20%');
+
+// 本地判断分：用跟关键词无关的信号加减，但不动基准盘
+const judgeDuel = createDuel(judgePersona);
+if (localJudge(judgeDuel, '您家孩子现在在哪儿高就啊？', 32) !== 32) {
+  fail('基准分应该就是查表值（不加减），实际 ' + localJudge(judgeDuel, '您家孩子现在在哪儿高就啊？', 32));
+}
+recordTurn(judgeDuel, { userText: '你懂个屁', aiReply: 'x', hitType: 'self_destruct', quip: '' });
+if (localJudge(judgeDuel, '你懂个屁', -12) !== -15) {
+  fail('复读 + 太短该扣到下限，实际 ' + localJudge(judgeDuel, '你懂个屁', -12));
+}
+if (localJudge(judgeDuel, '但是你自己上次也这么说的吧', 12) !== 16) {
+  fail('引用了对方该加 4，实际 ' + localJudge(judgeDuel, '但是你自己上次也这么说的吧', 12));
+}
+if (localJudge(judgeDuel, '😏😏😏', 12) !== 12) fail('纯表情不该被本地判断扣分');
+console.log('✓ 本地判断分：复读/太短扣分，引用对方加分，纯表情不奖不罚');
+
+// 沉默是超时判的，不是玩家敷衍 —— 不该倒扣
+const silentDuel = createDuel(judgePersona);
+const silentTurn = recordTurn(silentDuel, {
+  userText: '（沉默）', aiReply: 'x', hitType: 'miss', quip: '', silent: true,
+});
+if (silentTurn.delta !== 0) fail('沉默应该 0 分，实际 ' + silentTurn.delta);
+
+// 远程的 score 要一路走到结算里。
+// 这个假 localStorage 得能存能读 —— 只写不读的话 resolveConfig() 读回来是
+// 默认的 local，generateTurn 直接走本地，测的就不是远程那条路了
+const judgeStore = new Map();
+global.localStorage = {
+  getItem: (k) => (judgeStore.has(k) ? judgeStore.get(k) : null),
+  setItem: (k, v) => judgeStore.set(k, String(v)),
+  removeItem: (k) => judgeStore.delete(k),
+};
+saveSettings({ provider: 'openai', apiKey: 'test-key', model: 'test-model', baseUrl: 'https://example.test/v1' });
+const stubFetch = (content) => async () => ({
+  ok: true,
+  status: 200,
+  json: async () => ({ choices: [{ message: { content } }] }),
+});
+
+global.fetch = stubFetch('{"reply":"行","hitType":"hit","score":30}');
+const scored = await generateTurn({
+  persona: judgePersona,
+  duel: createDuel(judgePersona),
+  userText: '但是你自己上次也这么说的吧',
+});
+if (scored.judgeScore !== 30) fail('远程的 score 没接住：' + scored.judgeScore);
+
+global.fetch = stubFetch('{"reply":"行","hitType":"hit","score":999}');
+const overscored = await generateTurn({
+  persona: judgePersona,
+  duel: createDuel(judgePersona),
+  userText: '测试一下',
+});
+if (overscored.judgeScore !== 35) fail('超界的 score 应该被夹到 35，实际 ' + overscored.judgeScore);
+
+global.fetch = stubFetch('{"reply":"行","hitType":"hit"}');
+const unscored = await generateTurn({
+  persona: judgePersona,
+  duel: createDuel(judgePersona),
+  userText: '测试一下',
+});
+if (unscored.judgeScore !== null) fail('模型没给 score 时应该是 null，实际 ' + unscored.judgeScore);
+console.log('✓ 远程 score：拿到分就用，超界夹住，没给就交给本地判断分');
+
+saveSettings({ provider: 'local', apiKey: '', model: '', baseUrl: '' });
+delete global.localStorage;
+delete global.fetch;
+
+// score 得真的进到结算：光接住不落地等于没接
+const remoteDuel = createDuel(judgePersona);
+const remoteTurn = recordTurn(remoteDuel, {
+  userText: '但是你自己上次也这么说的吧',
+  aiReply: '行',
+  hitType: 'hit',
+  quip: '',
+  judgeScore: 30,
+});
+if (remoteTurn.record.tableDelta !== 12 || remoteTurn.record.judgeDelta !== 30) {
+  fail('结算里没记下 80/20 的两半：' + JSON.stringify(remoteTurn.record));
+}
+if (remoteTurn.delta !== 16) fail('查表 12、判断 30 应该得 16，实际 ' + remoteTurn.delta);
+console.log('✓ 结算记录里留着两半（查表 +12 / 判断 +30），合起来 +16');

@@ -34,7 +34,9 @@ import {
   paintThemeButton,
   saveTheme,
 } from './lib/theme.js';
+import { MAX_INPUT, clip } from './lib/text.js';
 import { h } from './lib/dom.js';
+import { createEmojiPicker } from './ui/emoji-picker.js';
 import { openSettings } from './ui/settings-dialog.js';
 
 const screenEl = document.getElementById('screen');
@@ -48,7 +50,7 @@ const state = {
   secondsLeft: secondsOf(DEFAULT_DIFFICULTY),
 };
 
-/** 当前屏幕里需要原地更新的节点。 */
+/** 当前屏幕里需要原地更新的节点（外加少数几个控制器句柄，比如 refs.picker）。 */
 const refs = {};
 
 /* ------------------------------------------------------------------ */
@@ -58,6 +60,17 @@ const refs = {};
 function scrollLogToBottom() {
   if (!refs.log) return;
   refs.log.scrollTop = refs.log.scrollHeight;
+}
+
+/**
+ * 输入框还剩多少字。emoji 占两个 UTF-16 单位、看着却只有一个字符，
+ * 不把数亮出来，玩家会莫名其妙发现「字还没打满就不让打了」。
+ */
+function syncCounter() {
+  if (!refs.counter || !refs.input) return;
+  const used = refs.input.value.length;
+  refs.counter.textContent = `${used} / ${MAX_INPUT}`;
+  refs.counter.classList.toggle('is-near', used >= MAX_INPUT * 0.9);
 }
 
 /* ------------------------------------------------------------------ */
@@ -202,7 +215,7 @@ function startDuel(personaId) {
 function viewDuel() {
   const { duel } = state;
   const persona = duel.persona;
-  const stage = stageOf(duel.anger);
+  const stage = stageOf(duel.breakdown);
 
   refs.log = h('div', { class: 'log' });
   refs.log.append(bubbleAI(persona.opener));
@@ -213,8 +226,8 @@ function viewDuel() {
     refs.log.append(quipLine(round));
   }
 
-  refs.angerFill = h('div', { class: 'anger-fill', style: `width:${duel.anger}%` });
-  refs.angerNum = h('span', { class: 'anger-num', text: String(duel.anger) });
+  refs.meterFill = h('div', { class: 'meter-fill', style: `width:${duel.breakdown}%` });
+  refs.meterNum = h('span', { class: 'meter-num', text: String(duel.breakdown) });
   refs.stagePill = h('span', {
     class: `stage-pill stage-${stage.id}`,
     text: stage.label,
@@ -228,7 +241,7 @@ function viewDuel() {
   refs.input = h('textarea', {
     class: 'input',
     rows: '2',
-    maxlength: '100',
+    maxlength: String(MAX_INPUT),
     placeholder: '说点什么，让他绷不住…（Enter 发送，Shift+Enter 换行）',
   });
   refs.input.addEventListener('keydown', (event) => {
@@ -236,6 +249,16 @@ function viewDuel() {
       event.preventDefault();
       submitTurn(refs.input.value, {});
     }
+  });
+  refs.input.addEventListener('input', syncCounter);
+
+  // 表情面板：点一个插到光标处。它自己管开关，我们只负责给声音和刷新字数
+  refs.picker = createEmojiPicker({
+    field: refs.input,
+    onInsert: () => {
+      syncCounter();
+      blip('reply');
+    },
   });
 
   const sendBtn = h('button', {
@@ -245,6 +268,9 @@ function viewDuel() {
     onclick: () => submitTurn(refs.input.value, {}),
   });
   refs.sendBtn = sendBtn;
+
+  refs.counter = h('span', { class: 'counter' });
+  syncCounter();
 
   const presetRow = h(
     'div',
@@ -265,6 +291,7 @@ function viewDuel() {
         },
       }),
     ),
+    refs.counter,
   );
 
   const root = h(
@@ -292,25 +319,30 @@ function viewDuel() {
     ),
     h(
       'div',
-      { class: 'anger' },
+      { class: 'meter' },
       h(
         'div',
-        { class: 'anger-head' },
-        h('span', { class: 'anger-label', text: '怒气值' }),
-        refs.angerNum,
+        { class: 'meter-head' },
+        h('span', { class: 'meter-label', text: '破防值' }),
+        refs.meterNum,
         refs.stagePill,
       ),
       h(
         'div',
-        { class: 'anger-track' },
-        refs.angerFill,
-        h('div', { class: 'anger-tick', style: 'left:35%' }),
-        h('div', { class: 'anger-tick', style: 'left:65%' }),
-        h('div', { class: 'anger-tick', style: 'left:85%' }),
+        { class: 'meter-track' },
+        refs.meterFill,
+        h('div', { class: 'meter-tick', style: 'left:35%' }),
+        h('div', { class: 'meter-tick', style: 'left:65%' }),
+        h('div', { class: 'meter-tick', style: 'left:85%' }),
       ),
     ),
     refs.log,
-    h('div', { class: 'composer' }, presetRow, h('div', { class: 'input-row' }, refs.input, sendBtn)),
+    h(
+      'div',
+      { class: 'composer' },
+      presetRow,
+      h('div', { class: 'input-row' }, refs.picker.el, refs.input, sendBtn),
+    ),
   );
 
   requestAnimationFrame(() => {
@@ -343,13 +375,22 @@ function fallbackLine(reason) {
   );
 }
 
+/** 带正负号的数字：+12 / -3。破防值的每条数字都这么显示。 */
+function signed(n) {
+  return `${n > 0 ? '+' : ''}${n}`;
+}
+
+/** 80/20 是怎么算出来的。悬停能看到，不占对线屏的地方。 */
+function deltaMath(round) {
+  return `查表 ${signed(round.tableDelta)} × 80% + 判断 ${signed(round.judgeDelta)} × 20% = ${signed(round.delta)}`;
+}
+
 function quipLine(round) {
-  const sign = round.delta > 0 ? '+' : '';
   return h(
     'div',
-    { class: `quip quip-${round.hitType}` },
+    { class: `quip quip-${round.hitType}`, title: deltaMath(round) },
     h('span', { class: 'quip-tag', text: HIT_LABELS[round.hitType] || '回合' }),
-    h('span', { class: 'quip-text', text: `${round.quip || ''} ${sign}${round.delta}` }),
+    h('span', { class: 'quip-text', text: `${round.quip || ''} ${signed(round.delta)}` }),
   );
 }
 
@@ -360,7 +401,8 @@ function quipLine(round) {
 async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
   if (state.busy || !state.duel || state.duel.result) return;
 
-  const text = String(rawText || '').trim().slice(0, 100);
+  // clip 而不是 slice：正好卡在上限上时，slice 会把一个 emoji 劈成半个
+  const text = clip(String(rawText || '').trim());
   if (!text && !timeout) {
     refs.input?.focus();
     return;
@@ -368,13 +410,16 @@ async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
 
   state.busy = true;
   stopTimer();
+  refs.picker?.close();
 
   const userText = text || SILENCE_TEXT;
 
   refs.log.append(bubbleMe(userText));
   if (refs.input) refs.input.value = '';
+  syncCounter();
   if (refs.sendBtn) refs.sendBtn.disabled = true;
   if (refs.input) refs.input.disabled = true;
+  refs.picker?.setDisabled(true);
   scrollLogToBottom();
   blip('send');
 
@@ -401,6 +446,7 @@ async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
     hitType: turn.hitType,
     quip: turn.quip,
     softspot: turn.softspot,
+    judgeScore: turn.judgeScore,
     usedPreset: preset,
     silent: timeout,
   });
@@ -408,7 +454,7 @@ async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
   refs.log.append(bubbleAI(turn.reply));
   if (turn.fallback) refs.log.append(fallbackLine(turn.fallback));
   refs.log.append(quipLine(record));
-  updateAngerUI();
+  updateMeterUI();
   scrollLogToBottom();
   blip(turn.hitType === 'softspot' ? 'softspot' : turn.hitType === 'self_destruct' ? 'self_destruct' : 'reply');
 
@@ -427,6 +473,7 @@ async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
 
   state.busy = false;
   if (refs.sendBtn) refs.sendBtn.disabled = false;
+  refs.picker?.setDisabled(false);
   if (refs.input) {
     refs.input.disabled = false;
     refs.input.focus();
@@ -437,17 +484,17 @@ async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
   startTimer();
 }
 
-function updateAngerUI() {
+function updateMeterUI() {
   const { duel } = state;
-  const stage = stageOf(duel.anger);
-  if (refs.angerFill) refs.angerFill.style.width = `${duel.anger}%`;
-  if (refs.angerNum) refs.angerNum.textContent = String(duel.anger);
+  const stage = stageOf(duel.breakdown);
+  if (refs.meterFill) refs.meterFill.style.width = `${duel.breakdown}%`;
+  if (refs.meterNum) refs.meterNum.textContent = String(duel.breakdown);
   if (refs.stagePill) {
     refs.stagePill.textContent = stage.label;
     refs.stagePill.className = `stage-pill stage-${stage.id}`;
   }
-  // 颜色交给 CSS 变量 —— 换主题时怒气条要跟着变
-  if (refs.angerFill) refs.angerFill.style.background = `var(--stage-${stage.id})`;
+  // 颜色交给 CSS 变量 —— 换主题时破防值条要跟着变
+  if (refs.meterFill) refs.meterFill.style.background = `var(--stage-${stage.id})`;
 }
 
 async function finish(result) {
@@ -562,7 +609,7 @@ function viewReport() {
       ),
       stat('软肋命中', `${hits} / ${duel.persona.softspots.length}`),
       stat('自爆次数', `${duel.selfDestructs} / ${MAX_SELF_DESTRUCTS}`),
-      stat('最终怒气', `${duel.anger} / 100`),
+      stat('最终破防值', `${duel.breakdown} / 100`),
       stat('引擎', engineLabel()),
     ),
     h('h3', { class: 'section-title', text: '对线回放' }),
@@ -578,8 +625,10 @@ function viewReport() {
           h(
             'div',
             { class: `replay-tag tag-${round.hitType}` },
-            `${HIT_LABELS[round.hitType] || '回合'} ${round.delta > 0 ? '+' : ''}${round.delta}`,
+            `${HIT_LABELS[round.hitType] || '回合'} ${signed(round.delta)}`,
           ),
+          // 复盘屏就是把账摊开的地方：查表那 80% 和判断那 20% 各出了多少力
+          h('div', { class: 'replay-math', text: deltaMath(round) }),
         ),
       ),
     ),
@@ -639,14 +688,14 @@ function exportCard() {
     text: cssVar('--text'),
     muted: cssVar('--muted'),
     accent: cssVar('--accent'),
-    anger: cssVar('--anger'),
+    danger: cssVar('--danger'),
   };
   const FONT = '"PingFang SC", "Microsoft YaHei", sans-serif';
 
   ctx.fillStyle = ink.bg;
   ctx.fillRect(0, 0, W, H);
 
-  ctx.fillStyle = ink.anger;
+  ctx.fillStyle = ink.danger;
   ctx.fillRect(0, 0, W, 8);
 
   ctx.fillStyle = ink.muted;
@@ -678,7 +727,7 @@ function exportCard() {
     ['难度', `${getDifficulty(state.difficulty).label}（${secondsOf(state.difficulty)}s）`],
     ['软肋命中', `${uniqueSoftspotHits(duel)} / ${duel.persona.softspots.length}`],
     ['自爆次数', `${duel.selfDestructs} / ${MAX_SELF_DESTRUCTS}`],
-    ['最终怒气', `${duel.anger} / 100`],
+    ['最终破防值', `${duel.breakdown} / 100`],
   ];
   let y = 550;
   ctx.font = `24px ${FONT}`;
