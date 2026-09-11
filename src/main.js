@@ -22,12 +22,14 @@ import {
   uniqueSoftspotHits,
 } from './lib/duel-engine.js';
 import { loadRoundSeconds } from './lib/duel-options.js';
+import { exportDuelCard } from './lib/share-card.js';
 import { engineLabel, generateTurn, isRemote } from './lib/llm.js';
 import { blip, isSoundEnabled, setSoundEnabled } from './lib/audio.js';
 import { h } from './lib/dom.js';
 import { openSettings } from './ui/settings-dialog.js';
 import { toggleSkinPopover } from './ui/skin-popover.js';
 import { createLibraryView } from './ui/library.js';
+import { createArenaView } from './ui/arena.js';
 import {
   loadFavorites,
   loadNotes,
@@ -55,6 +57,15 @@ const state = {
 /** 当前屏幕里需要原地更新的节点。 */
 const refs = {};
 
+/** 擂台视图实例（离场即弃局：render 前先 dispose，清掉它的答题倒计时）。 */
+let arenaView = null;
+
+function disposeArena() {
+  if (!arenaView) return;
+  arenaView.dispose();
+  arenaView = null;
+}
+
 /* ------------------------------------------------------------------ */
 /* DOM 小工具                                                          */
 /* ------------------------------------------------------------------ */
@@ -81,6 +92,7 @@ function replayFx(el, cls) {
 function render() {
   stopTimer();
   closeStickerPicker();
+  disposeArena();
   for (const key of Object.keys(refs)) delete refs[key];
   screenEl.replaceChildren();
 
@@ -89,6 +101,10 @@ function render() {
   else if (state.screen === 'duel') screenEl.append(viewDuel());
   else if (state.screen === 'report') screenEl.append(viewReport());
   else if (state.screen === 'library') screenEl.append(libraryView());
+  else if (state.screen === 'arena') {
+    arenaView = createArenaView({ onBack: goLobby, openSettings: openSettingsDialog });
+    screenEl.append(arenaView.root);
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -143,29 +159,33 @@ function viewLobby() {
         ),
         h('p', { class: 'module-desc', text: '回怼话术随身查阅，收藏自己的必杀句。' }),
       ),
-      lockedCard('好友擂台', '同一块屏幕，两个人，AI 当裁判。'),
+      h(
+        'button',
+        {
+          class: 'module-card arena',
+          type: 'button',
+          onclick: enterArena,
+        },
+        h(
+          'div',
+          { class: 'module-top' },
+          h('span', { class: 'module-name', text: '好友擂台' }),
+        ),
+        h('p', { class: 'module-desc', text: '同一块屏幕，两个人，AI 当裁判。' }),
+      ),
     ),
     h('p', {
       class: 'footnote',
-      text: '后面的房间正在装修，先把对面说破防再回来。',
+      text: '擂台也开张了：是骡子是马，拉个朋友上场遛遛。',
     }),
     isRemote() ? null : connectHint(),
   );
 }
 
-/** 未落地模块的卡：可看不可点，不做死链。 */
-function lockedCard(name, desc) {
-  return h(
-    'button',
-    { class: 'module-card locked', type: 'button', disabled: true },
-    h(
-      'div',
-      { class: 'module-top' },
-      h('span', { class: 'module-name', text: name }),
-      h('span', { class: 'module-badge', text: '即将开放' }),
-    ),
-    h('p', { class: 'module-desc', text: desc }),
-  );
+/** 擂台入口：离场即弃局的派对局，不挂「进行中」角标、不进 state。 */
+function enterArena() {
+  state.screen = 'arena';
+  render();
 }
 
 /** 大厅主卡：有活局就续，没有就进选人（顺手弃掉已结束的旧局）。 */
@@ -1141,113 +1161,13 @@ function goSelect() {
 }
 
 /* ------------------------------------------------------------------ */
-/* 战绩图导出                                                          */
+/* 战绩图导出：绘制逻辑在 lib/share-card.js（A3 传播化重做）             */
 /* ------------------------------------------------------------------ */
 
 function exportCard() {
   const { duel } = state;
   if (!duel) return;
-  const title = pickTitle(duel);
-  const copy = resultCopyOf(duel);
-  const isEq = duel.mode === 'extinguish';
-
-  const W = 720;
-  const H = 1000;
-  const canvas = document.createElement('canvas');
-  canvas.width = W * 2;
-  canvas.height = H * 2;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(2, 2);
-
-  // 跟着当前主题走：颜色全部读 CSS 令牌，别在这里再写死一套
-  const css = getComputedStyle(document.documentElement);
-  const token = (name) => css.getPropertyValue(name).trim();
-  const C = {
-    bg: token('--canvas-bg'),
-    bar: token('--stage-breakdown'),
-    muted: token('--muted'),
-    text: token('--text'),
-    card: token('--surface-deep'),
-    rank: token('--accent-strong'),
-  };
-
-  ctx.fillStyle = C.bg;
-  ctx.fillRect(0, 0, W, H);
-
-  ctx.fillStyle = C.bar;
-  ctx.fillRect(0, 0, W, 8);
-
-  ctx.fillStyle = C.muted;
-  ctx.font = '20px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
-  ctx.fillText('嘴强王者 · TALK KING', 60, 90);
-
-  ctx.fillStyle = C.text;
-  ctx.font = 'bold 56px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
-  ctx.fillText(copy.headline, 60, 190);
-
-  ctx.fillStyle = C.muted;
-  ctx.font = '24px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
-  ctx.fillText(`对手：${duel.persona.name}`, 60, 240);
-
-  ctx.fillStyle = C.card;
-  ctx.fillRect(60, 290, W - 120, 190);
-  ctx.fillStyle = C.rank;
-  ctx.font = 'bold 22px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
-  ctx.fillText(title.rank, 90, 340);
-  ctx.fillStyle = C.text;
-  ctx.font = 'bold 40px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
-  ctx.fillText(title.name, 90, 395);
-  ctx.fillStyle = C.muted;
-  ctx.font = '20px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
-  wrapText(ctx, title.desc, 90, 435, W - 220, 28);
-
-  const rows = [
-    ['回合数', `${duel.rounds.length} / ${MAX_ROUNDS}`],
-    ['软肋命中', `${uniqueSoftspotHits(duel)} / ${duel.persona.softspots.length}`],
-    ['自爆次数', `${duel.selfDestructs} / ${MAX_SELF_DESTRUCTS}`],
-    ['最终怒气', `${duel.anger} / 100`],
-  ];
-  const exportRows = isEq ? rows.map((r) => (r[0] === '软肋命中' ? ['心结命中', r[1]] : r)) : rows;
-  let y = 550;
-  ctx.font = '24px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
-  for (const [label, value] of exportRows) {
-    ctx.fillStyle = C.muted;
-    ctx.fillText(label, 60, y);
-    ctx.fillStyle = C.text;
-    ctx.fillText(value, 300, y);
-    y += 52;
-  }
-
-  ctx.fillStyle = C.muted;
-  ctx.font = '20px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
-  wrapText(ctx, '软肋这东西，人人都有一根。', 60, 880, W - 120, 30);
-  ctx.fillText(`引擎：${engineLabel()}`, 60, 950);
-
-  canvas.toBlob((blob) => {
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `嘴强王者-${title.name}.png`;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, 'image/png');
-}
-
-function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
-  let line = '';
-  let cursorY = y;
-  for (const char of String(text)) {
-    const test = line + char;
-    if (ctx.measureText(test).width > maxWidth && line) {
-      ctx.fillText(line, x, cursorY);
-      line = char;
-      cursorY += lineHeight;
-    } else {
-      line = test;
-    }
-  }
-  if (line) ctx.fillText(line, x, cursorY);
+  return exportDuelCard({ duel, copy: resultCopyOf(duel), engine: engineLabel() });
 }
 
 /* ------------------------------------------------------------------ */

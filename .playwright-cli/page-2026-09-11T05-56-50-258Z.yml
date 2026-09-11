@@ -1,0 +1,28 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]: 嘴强王者TALK KING
+    - generic [ref=e5]:
+      - generic [ref=e6]: 本地引擎
+      - button "皮肤选择" [ref=e7] [cursor=pointer]
+      - button "切换到深色主题" [ref=e9] [cursor=pointer]
+      - button "接入你的 AI" [ref=e11] [cursor=pointer]
+      - button "声音" [ref=e13] [cursor=pointer]
+  - main [ref=e15]:
+    - generic [ref=e37]:
+      - button "← 大厅" [ref=e316] [cursor=pointer]
+      - generic [ref=e317]:
+        - heading "好友擂台" [level=1] [ref=e318]
+        - paragraph [ref=e319]: 第 1 / 3 轮 · 战报
+      - generic [ref=e320]:
+        - generic [ref=e321]:
+          - article [ref=e322]:
+            - generic [ref=e323]: 玩家一
+            - paragraph [ref=e324]: 这一句是窄屏下的测试回答，长度足够
+            - generic [ref=e325]: "5"
+            - paragraph [ref=e326]: 粗评：四平八稳，没踩到分点。
+          - article [ref=e327]:
+            - generic [ref=e328]: 玩家二
+            - paragraph [ref=e329]: 窄屏回它一句
+            - generic [ref=e330]: "4"
+            - paragraph [ref=e331]: 粗评：四平八稳，没踩到分点。
+        - button "下一轮" [ref=e333] [cursor=pointer]

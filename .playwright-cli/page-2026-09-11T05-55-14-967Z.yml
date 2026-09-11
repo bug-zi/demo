@@ -1,0 +1,28 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]: 嘴强王者TALK KING
+    - generic [ref=e5]:
+      - generic [ref=e6]: 本地引擎
+      - button "皮肤选择" [ref=e7] [cursor=pointer]
+      - button "切换到深色主题" [ref=e9] [cursor=pointer]
+      - button "接入你的 AI" [ref=e11] [cursor=pointer]
+      - button "声音" [ref=e13] [cursor=pointer]
+  - main [ref=e15]:
+    - generic [ref=e37]:
+      - button "← 大厅" [ref=e175] [cursor=pointer]
+      - generic [ref=e176]:
+        - heading "好友擂台" [level=1] [ref=e177]
+        - paragraph [ref=e178]: 第 3 / 3 轮
+      - generic [ref=e179]:
+        - generic [ref=e180]:
+          - generic [ref=e181]: 第 3 / 3 轮
+          - generic [ref=e182]: 正在作答：甲哥
+        - article [ref=e183]:
+          - heading "年夜饭·工资审问" [level=2] [ref=e184]
+          - paragraph [ref=e185]: 年夜饭，全桌人都在，二姨放下筷子盯着你。
+          - paragraph [ref=e186]: 一个月到底挣多少？你表哥同龄都买房了。
+        - generic [ref=e187]:
+          - textbox "你怎么接这句话？（Enter 交卷，Shift+Enter 换行）" [ref=e188]
+          - generic [ref=e189]:
+            - generic [ref=e190]: 60s
+            - button "就这么回" [ref=e191] [cursor=pointer]

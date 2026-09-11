@@ -1,0 +1,28 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]: 嘴强王者TALK KING
+    - generic [ref=e5]:
+      - generic [ref=e6]: 本地引擎
+      - button "皮肤选择" [ref=e7] [cursor=pointer]
+      - button "切换到深色主题" [ref=e9] [cursor=pointer]
+      - button "接入你的 AI" [ref=e11] [cursor=pointer]
+      - button "声音" [ref=e13] [cursor=pointer]
+  - main [ref=e15]:
+    - generic [ref=e37]:
+      - button "← 大厅" [ref=e273] [cursor=pointer]
+      - generic [ref=e274]:
+        - heading "好友擂台" [level=1] [ref=e275]
+        - paragraph [ref=e276]: 第 1 / 3 轮
+      - generic [ref=e277]:
+        - generic [ref=e278]:
+          - generic [ref=e279]: 第 1 / 3 轮
+          - generic [ref=e280]: 正在作答：玩家一
+        - article [ref=e281]:
+          - heading "宿舍·凌晨一把" [level=2] [ref=e282]
+          - paragraph [ref=e283]: 凌晨一点，室友戴着耳机打游戏还在跟队友吼，你明早八点有课。
+          - paragraph [ref=e284]: 哎呀马上马上，最后一把，你先戴个耳塞呗。
+        - generic [ref=e285]:
+          - textbox "你怎么接这句话？（Enter 交卷，Shift+Enter 换行）" [ref=e286]
+          - generic [ref=e287]:
+            - generic [ref=e288]: 60s
+            - button "就这么回" [ref=e289] [cursor=pointer]

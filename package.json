@@ -10,10 +10,12 @@
     "preview": "vite preview",
     "smoke": "node scripts/smoke.mjs",
     "dom-check": "node scripts/dom-check.mjs",
-    "library-check": "node scripts/library-check.mjs"
+    "library-check": "node scripts/library-check.mjs",
+    "arena-check": "node scripts/arena-check.mjs"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.124.0"
+    "@anthropic-ai/sdk": "^0.124.0",
+    "qrcode-generator": "^2.0.4"
   },
   "devDependencies": {
     "jsdom": "^29.1.1",

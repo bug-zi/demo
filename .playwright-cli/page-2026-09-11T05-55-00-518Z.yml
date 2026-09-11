@@ -1,0 +1,28 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]: 嘴强王者TALK KING
+    - generic [ref=e5]:
+      - generic [ref=e6]: 本地引擎
+      - button "皮肤选择" [ref=e7] [cursor=pointer]
+      - button "切换到深色主题" [ref=e9] [cursor=pointer]
+      - button "接入你的 AI" [ref=e11] [cursor=pointer]
+      - button "声音" [ref=e13] [cursor=pointer]
+  - main [ref=e15]:
+    - generic [ref=e37]:
+      - button "← 大厅" [ref=e114] [cursor=pointer]
+      - generic [ref=e115]:
+        - heading "好友擂台" [level=1] [ref=e116]
+        - paragraph [ref=e117]: 第 2 / 3 轮
+      - generic [ref=e118]:
+        - generic [ref=e119]:
+          - generic [ref=e120]: 第 2 / 3 轮
+          - generic [ref=e121]: 正在作答：乙姐
+        - article [ref=e122]:
+          - heading "客服·已签收" [level=2] [ref=e123]
+          - paragraph [ref=e124]: 显示「已签收」的快递你翻遍门口也没找到，打电话过去。
+          - paragraph [ref=e125]: 系统就是签收了，肯定放门口了，你自己好好找找，别人都没丢过。
+        - generic [ref=e126]:
+          - textbox "你怎么接这句话？（Enter 交卷，Shift+Enter 换行）" [ref=e127]
+          - generic [ref=e128]:
+            - generic [ref=e129]: 60s
+            - button "就这么回" [ref=e130] [cursor=pointer]

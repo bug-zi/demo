@@ -1,0 +1,33 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]: 嘴强王者TALK KING
+    - generic [ref=e5]:
+      - generic [ref=e6]: 本地引擎
+      - button "皮肤选择" [ref=e7] [cursor=pointer]
+      - button "切换到深色主题" [ref=e9] [cursor=pointer]
+      - button "接入你的 AI" [ref=e11] [cursor=pointer]
+      - button "声音" [ref=e13] [cursor=pointer]
+  - main [ref=e15]:
+    - generic [ref=e37]:
+      - button "← 大厅" [ref=e236] [cursor=pointer]
+      - generic [ref=e237]:
+        - paragraph [ref=e238]: 甲哥 胜出
+        - paragraph [ref=e239]: 甲哥 19 ： 10 乙姐
+        - generic [ref=e240]:
+          - generic [ref=e241]: "第 1 轮 甲哥 10 : 4 乙姐"
+          - generic [ref=e242]: "第 2 轮 甲哥 5 : 4 乙姐"
+          - generic [ref=e243]: "第 3 轮 甲哥 4 : 2 乙姐"
+        - generic [ref=e244]:
+          - generic [ref=e245]: 全场金句
+          - paragraph [ref=e246]: 甲哥：「初稿已经写到第二章了，卡在数据那一节，周三之前给您完整版，到时候约时间细聊」
+          - paragraph [ref=e247]: 全场最高分的一句。
+        - generic [ref=e248]:
+          - paragraph [ref=e249]: 甲哥：三轮里最好一轮拿了 10 分。
+          - paragraph [ref=e250]: 乙姐：三轮里最好一轮拿了 4 分。
+          - paragraph [ref=e251]: 甲哥 以 19：10 拿下。（本地粗评，图一乐）
+        - generic [ref=e252]:
+          - generic [ref=e253]: 未接入 AI：本场为本地粗评。
+          - button "接入你的 AI →" [ref=e254] [cursor=pointer]
+        - generic [ref=e255]:
+          - button "再来一局" [ref=e256] [cursor=pointer]
+          - button "返回大厅" [ref=e257] [cursor=pointer]

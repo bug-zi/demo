@@ -28,6 +28,7 @@ import {
 } from '../data/fallbacks.js';
 import { STICKERS, pickAiSticker, stickerById } from '../data/stickers.js';
 import { localHitType, matchSoftspot, stageOf } from './duel-engine.js';
+import { localRecap, localScore } from './arena.js';
 import { loadSettings } from './settings.js';
 
 const ENV = (typeof import.meta !== 'undefined' && import.meta.env) || {};
@@ -243,7 +244,11 @@ function toTurn(parsed, persona, userText) {
 /* 真实 AI —— Claude                                                    */
 /* ------------------------------------------------------------------ */
 
-async function anthropicTurn(config, { persona, duel, userText }) {
+/**
+ * Anthropic 公共请求核：建客户端 → JSON schema 约束输出 → 解析 JSON。
+ * 对线回合与擂台评分共用（曾在这里漏传 userSticker，见 anthropicTurn 的教训）。
+ */
+async function anthropicJson(config, { system, messages, schema, maxTokens = 2048 }) {
   const { default: Anthropic } = await import('@anthropic-ai/sdk');
 
   const client = new Anthropic({
@@ -256,13 +261,13 @@ async function anthropicTurn(config, { persona, duel, userText }) {
   const response = await client.messages.create({
     model: config.model || DEFAULT_ANTHROPIC_MODEL,
     // 台词本身很短，但开了 thinking 的话思考也算在这个额度里
-    max_tokens: 2048,
-    system: buildSystemPrompt(persona, duel),
-    messages: buildMessages(duel, userText, ctx.userSticker),
+    max_tokens: maxTokens,
+    system,
+    messages,
     thinking: { type: THINKING },
     output_config: {
       effort: 'low',
-      format: { type: 'json_schema', schema: TURN_SCHEMA },
+      format: { type: 'json_schema', schema },
     },
   });
 
@@ -276,7 +281,19 @@ async function anthropicTurn(config, { persona, duel, userText }) {
   const textBlock = response.content.find((b) => b.type === 'text');
   if (!textBlock) throw new Error('模型没有返回文本');
 
-  return toTurn(extractJson(textBlock.text), persona, userText);
+  return extractJson(textBlock.text);
+}
+
+async function anthropicTurn(config, { persona, duel, userText, userSticker }) {
+  return toTurn(
+    await anthropicJson(config, {
+      system: buildSystemPrompt(persona, duel),
+      messages: buildMessages(duel, userText, userSticker),
+      schema: TURN_SCHEMA,
+    }),
+    persona,
+    userText,
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -293,24 +310,21 @@ function openAiEndpoint(baseUrl) {
 // 跟答案共用这个额度：给 512 的话，历史一长思考就把额度吃光，content 直接空。
 const OPENAI_MAX_TOKENS = 4096;
 
-function openAiBody(config, { persona, duel, userText, userSticker }, withJsonMode, reminder) {
-  const messages = [
-    { role: 'system', content: buildSystemPrompt(persona, duel) },
-    ...buildMessages(duel, userText, userSticker),
+function openAiBody(config, { system, messages, reminder, temperature = 0.9 }, withJsonMode) {
+  const full = [
+    { role: 'system', content: system },
+    ...messages,
   ];
   // 最后一招：模型把「只输出 JSON」当耳旁风时，把要求再顶到它眼前
   if (reminder) {
-    messages.push({
-      role: 'user',
-      content: '（系统提醒：只输出 JSON，形如 {"reply":"...","hitType":"..."}，不要加任何别的字。）',
-    });
+    full.push({ role: 'user', content: reminder });
   }
   return {
     model: config.model,
     max_tokens: OPENAI_MAX_TOKENS,
-    temperature: 0.9,
+    temperature,
     ...(withJsonMode ? { response_format: { type: 'json_object' } } : {}),
-    messages,
+    messages: full,
   };
 }
 
@@ -363,13 +377,17 @@ const jsonModeUnsupported = new Set();
 const modeKey = (config) => `${config.baseUrl}|${config.model}`;
 const contentOf = (data) => String(data?.choices?.[0]?.message?.content || '');
 
-async function openAiTurn(config, ctx) {
+/**
+ * OpenAI 兼容公共请求核：response_format 重试（记忆哪些服务商不认）+ 非 JSON 提醒重试，
+ * 返回解析好的 JSON 对象。对线回合与擂台评分共用 —— 那套重试舞步只活在这里一份。
+ */
+async function openAiJson(config, { system, messages, reminder, temperature = 0.9 }) {
   if (!config.model) throw new Error('还没填模型名');
 
   const key = modeKey(config);
   const tryJsonMode = !jsonModeUnsupported.has(key);
 
-  let response = await postChat(config, openAiBody(config, ctx, tryJsonMode));
+  let response = await postChat(config, openAiBody(config, { system, messages, temperature }, tryJsonMode));
   let data = response.ok ? await response.json() : null;
 
   // 不认 response_format 的服务商有两种表现：直接 400，或者 200 但 content 是空的。
@@ -380,7 +398,7 @@ async function openAiTurn(config, ctx) {
   if (jsonModeFailed) {
     if (response.ok) jsonModeUnsupported.add(key);
     console.warn(`[嘴强王者] ${config.model} 不吃 response_format，改用它自己的 JSON 输出。`);
-    response = await postChat(config, openAiBody(config, ctx, false));
+    response = await postChat(config, openAiBody(config, { system, messages, temperature }, false));
     data = response.ok ? await response.json() : null;
   }
 
@@ -392,7 +410,10 @@ async function openAiTurn(config, ctx) {
   // 说人话不说 JSON：再顶一次要求，多半就老实了
   if (content && !looksLikeJson(content)) {
     console.warn(`[嘴强王者] ${config.model} 没按 JSON 回，追加一次提醒。它说的是：`, content.slice(0, 120));
-    const strict = await postChat(config, openAiBody(config, ctx, false, true));
+    const strict = await postChat(
+      config,
+      openAiBody(config, { system, messages, reminder, temperature }, false),
+    );
     if (strict.ok) {
       const strictData = await strict.json();
       const strictChoice = strictData?.choices?.[0];
@@ -406,7 +427,19 @@ async function openAiTurn(config, ctx) {
   }
 
   if (!content) throw new Error(emptyContentReason(choice, data));
-  return toTurn(extractJson(content), ctx.persona, ctx.userText);
+  return extractJson(content);
+}
+
+async function openAiTurn(config, ctx) {
+  return toTurn(
+    await openAiJson(config, {
+      system: buildSystemPrompt(ctx.persona, ctx.duel),
+      messages: buildMessages(ctx.duel, ctx.userText, ctx.userSticker),
+      reminder: '（系统提醒：只输出 JSON，形如 {"reply":"...","hitType":"..."}，不要加任何别的字。）',
+    }),
+    ctx.persona,
+    ctx.userText,
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -486,6 +519,228 @@ export async function generateTurn({ persona, duel, userText, userSticker }) {
   }
   await sleep(350 + Math.random() * 450);
   return localTurn({ persona, duel, userText, userSticker });
+}
+
+/* ------------------------------------------------------------------ */
+/* 好友擂台：AI 评委                                                    */
+/*                                                                     */
+/* 全项目唯一强依赖远程 AI 的模块：逐轮评分 + 终盘复盘都想要真模型的判断力。 */
+/* 无 key / 调用失败时降级到 arena.js 的本地粗评（关键词启发式，评不了      */
+/* 自由文本的深度，但保证有分、有话、可比较）—— 不留死路。                 */
+/* ------------------------------------------------------------------ */
+
+const playerScoreSchema = {
+  type: 'object',
+  properties: {
+    score: { type: 'number', description: '0-10 的整数分' },
+    comment: { type: 'string', description: '一句话短评，不超过 30 个字' },
+  },
+  required: ['score', 'comment'],
+  additionalProperties: false,
+};
+
+const ARENA_ROUND_SCHEMA = {
+  type: 'object',
+  properties: { p1: playerScoreSchema, p2: playerScoreSchema },
+  required: ['p1', 'p2'],
+  additionalProperties: false,
+};
+
+const ARENA_RECAP_SCHEMA = {
+  type: 'object',
+  properties: {
+    summary: { type: 'string', description: '终盘总评，不超过 80 个字' },
+    p1Comment: { type: 'string', description: '给 P1 的终评，不超过 40 个字' },
+    p2Comment: { type: 'string', description: '给 P2 的终评，不超过 40 个字' },
+    golden: {
+      type: 'object',
+      properties: {
+        player: { type: 'string', enum: ['p1', 'p2'] },
+        quote: { type: 'string', description: '金句原文摘录（必须抄自玩家的原话）' },
+        why: { type: 'string', description: '为什么这句封神，不超过 30 个字' },
+      },
+      required: ['player', 'quote', 'why'],
+      additionalProperties: false,
+    },
+    winner: { type: 'string', enum: ['p1', 'p2', 'draw'], description: '按总分判的胜者，平分写 draw' },
+  },
+  required: ['summary', 'p1Comment', 'p2Comment', 'winner'],
+  additionalProperties: false,
+};
+
+const ARENA_ROUND_EXAMPLE = '{"p1":{"score":7,"comment":"…"},"p2":{"score":5,"comment":"…"}}';
+
+function arenaJudgeSystem() {
+  return [
+    `你在一款叫「嘴强王者」的游戏里当擂台评委。两个玩家面对同一个高压对话场景，各写了一句话回应，你来打分。`,
+    ``,
+    `# 评分口径（0-10 整数）`,
+    `0-2 完全破防、失态、骂人；3-4 没接住话；5-6 平稳接住；7-8 有理有据还有梗；9-10 一击必杀。`,
+    ``,
+    `# 规则`,
+    `1. comment 一句话，不超过 30 个字，毒舌但公道，可以点名玩家。`,
+    `2. 两边独立打分，同分允许。`,
+    `3. 毒舌的对象是话术，不是人：绝对禁止侮辱性词汇与地域/性别/职业歧视。`,
+    `4. 只输出 JSON，形如 ${ARENA_ROUND_EXAMPLE}，不要加任何别的字。`,
+  ].join('\n');
+}
+
+function arenaRecapSystem() {
+  return [
+    `你在一款叫「嘴强王者」的游戏里当擂台评委，整场比赛刚打完，你来写终盘复盘。`,
+    ``,
+    `# 规则`,
+    `1. summary 是终盘总评，不超过 80 个字：讲清这场谁压制了谁、转折在哪。`,
+    `2. p1Comment / p2Comment 是给两位玩家各自的终评，不超过 40 个字，毒舌但公道。`,
+    `3. golden 挑全场金句：quote 必须原样摘抄玩家的原话，why 不超过 30 个字。`,
+    `4. winner 按你看到的总分判，平分写 draw。`,
+    `5. 毒舌的对象是话术，不是人：绝对禁止侮辱性词汇与歧视。`,
+    `6. 只输出 JSON，形如 {"summary":"…","p1Comment":"…","p2Comment":"…","golden":{"player":"p1","quote":"…","why":"…"},"winner":"p1"}，不要加任何别的字。`,
+  ].join('\n');
+}
+
+/** 空答案显式标「弃权」—— 别让模型把缺答脑补成沉默流。 */
+const displayAnswer = (t) => {
+  const s = String(t ?? '').trim();
+  return s || '（弃权）';
+};
+
+function arenaRoundUser({ scenario, names, answers }) {
+  return [
+    `# 场景：${scenario.title}`,
+    scenario.setup,
+    `对方说：「${scenario.line}」`,
+    `# 出题人留的评分口径（仅供你参考）`,
+    scenario.hint,
+    ``,
+    `# 双方作答`,
+    `${names.p1}：「${displayAnswer(answers.p1)}」`,
+    `${names.p2}：「${displayAnswer(answers.p2)}」`,
+  ].join('\n');
+}
+
+function arenaRecapUser({ arena, scenarios }) {
+  const byId = new Map(scenarios.map((s) => [s.id, s]));
+  const totals = { p1: 0, p2: 0 };
+  const lines = [
+    `# 比赛双方`,
+    `P1 = ${arena.names.p1}，P2 = ${arena.names.p2}`,
+    ``,
+    `# 逐轮战况`,
+  ];
+  for (const r of arena.scores) {
+    const sc = byId.get(r.scenarioId);
+    lines.push(
+      `第 ${r.round} 轮「${sc ? sc.title : r.scenarioId}」—— 对方说：「${sc ? sc.line : ''}」`,
+      `${arena.names.p1}：「${displayAnswer(arena.answers.p1[r.round - 1])}」→ ${r.p1.score} 分`,
+      `${arena.names.p2}：「${displayAnswer(arena.answers.p2[r.round - 1])}」→ ${r.p2.score} 分`,
+    );
+    totals.p1 += r.p1.score;
+    totals.p2 += r.p2.score;
+  }
+  lines.push(``, `# 总分`, `${arena.names.p1} ${totals.p1} 分 vs ${arena.names.p2} ${totals.p2} 分`);
+  return lines.join('\n');
+}
+
+/** 把模型的逐轮评分收敛成统一结构；任一侧分数不是有限数就整笔判废（走降级，不静默造假分）。 */
+function toRoundVerdict(parsed) {
+  const side = (p) => {
+    const raw = Number(parsed?.[p]?.score);
+    if (!Number.isFinite(raw)) throw new Error(`评分不是数字（${p}.score=${parsed?.[p]?.score}）`);
+    return {
+      score: Math.max(0, Math.min(10, Math.round(raw))),
+      comment: String(parsed?.[p]?.comment || '').slice(0, 60) || '评委惜字如金，没写短评。',
+    };
+  };
+  return { p1: side('p1'), p2: side('p2'), source: 'remote' };
+}
+
+/** 终盘复盘收敛：winner 非法收敛 draw；golden 摘不干净就置 null（视图会跳过金句卡）。 */
+function toRecapVerdict(parsed) {
+  const golden =
+    parsed?.golden && ['p1', 'p2'].includes(parsed.golden.player) && String(parsed.golden.quote || '').trim()
+      ? {
+          player: parsed.golden.player,
+          quote: String(parsed.golden.quote).slice(0, 60),
+          why: String(parsed.golden.why || '').slice(0, 40) || '全场最高分的一句。',
+        }
+      : null;
+  return {
+    summary: String(parsed?.summary || '评委喝多了，什么也没写。').slice(0, 120),
+    p1Comment: String(parsed?.p1Comment || '').slice(0, 80) || '（无终评）',
+    p2Comment: String(parsed?.p2Comment || '').slice(0, 80) || '（无终评）',
+    golden,
+    winner: ['p1', 'p2', 'draw'].includes(parsed?.winner) ? parsed.winner : 'draw',
+    source: 'remote',
+  };
+}
+
+function localArenaRound({ scenario, answers }) {
+  const judge = (t) => {
+    const { score, comment } = localScore(scenario, t);
+    return { score, comment, source: 'local' };
+  };
+  return { p1: judge(answers.p1), p2: judge(answers.p2), source: 'local' };
+}
+
+/**
+ * 逐轮评分。远程失败一律降级本地粗评，不打断比赛。
+ * 注意：这里只管「打分与短评」；胜负永远由 arena.js 的 arenaResult 按总分判。
+ *
+ * @returns {Promise<{p1:{score:number,comment:string}, p2:{…}, source:string, fallback?:string}>}
+ */
+export async function judgeArenaRound({ scenario, names, answers }) {
+  const config = resolveConfig();
+  if (config.provider !== 'local') {
+    try {
+      const messages = [{ role: 'user', content: arenaRoundUser({ scenario, names, answers }) }];
+      const parsed =
+        config.provider === 'anthropic'
+          ? await anthropicJson(config, { system: arenaJudgeSystem(), messages, schema: ARENA_ROUND_SCHEMA })
+          : await openAiJson(config, {
+              system: arenaJudgeSystem(),
+              messages,
+              reminder: `（系统提醒：只输出 JSON，形如 ${ARENA_ROUND_EXAMPLE}，不要加任何别的字。）`,
+              temperature: 0.7,
+            });
+      return toRoundVerdict(parsed);
+    } catch (err) {
+      console.warn('[嘴强王者] 擂台评分调用失败，已降级本地粗评：', describeError(err));
+      return { ...localArenaRound({ scenario, answers }), fallback: describeError(err) };
+    }
+  }
+  await sleep(200 + Math.random() * 250);
+  return localArenaRound({ scenario, answers });
+}
+
+/**
+ * 终盘复盘。远程失败降级本地模板复盘；胜者字段两边都给，但展示层以引擎判定为准。
+ *
+ * @returns {Promise<{summary:string, p1Comment:string, p2Comment:string, golden:object|null, winner:string, source:string, fallback?:string}>}
+ */
+export async function arenaRecap({ arena, scenarios }) {
+  const config = resolveConfig();
+  if (config.provider !== 'local') {
+    try {
+      const messages = [{ role: 'user', content: arenaRecapUser({ arena, scenarios }) }];
+      const parsed =
+        config.provider === 'anthropic'
+          ? await anthropicJson(config, { system: arenaRecapSystem(), messages, schema: ARENA_RECAP_SCHEMA })
+          : await openAiJson(config, {
+              system: arenaRecapSystem(),
+              messages,
+              reminder:
+                '（系统提醒：只输出 JSON，形如 {"summary":"…","p1Comment":"…","p2Comment":"…","golden":{"player":"p1","quote":"…","why":"…"},"winner":"p1"}，不要加任何别的字。）',
+              temperature: 0.7,
+            });
+      return toRecapVerdict(parsed);
+    } catch (err) {
+      console.warn('[嘴强王者] 擂台复盘调用失败，已降级本地模板：', describeError(err));
+      return { ...localRecap(arena), fallback: describeError(err) };
+    }
+  }
+  await sleep(200 + Math.random() * 250);
+  return localRecap(arena);
 }
 
 /**

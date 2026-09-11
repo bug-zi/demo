@@ -1,0 +1,25 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]: 嘴强王者TALK KING
+    - generic [ref=e5]:
+      - generic [ref=e6]: 本地引擎
+      - button "皮肤选择" [ref=e7] [cursor=pointer]
+      - button "切换到深色主题" [ref=e9] [cursor=pointer]
+      - button "接入你的 AI" [ref=e11] [cursor=pointer]
+      - button "声音" [ref=e13] [cursor=pointer]
+  - main [ref=e15]:
+    - generic [ref=e37]:
+      - button "← 大厅" [ref=e258] [cursor=pointer]
+      - generic [ref=e259]:
+        - heading "好友擂台" [level=1] [ref=e260]
+        - paragraph [ref=e261]: 同一块屏幕，两个人，AI 当裁判。
+      - generic [ref=e262]:
+        - generic [ref=e263]:
+          - paragraph [ref=e264]: ① 每轮抽一张高压场景，两人先后作答（先答权轮换）
+          - paragraph [ref=e265]: ② 每答限时 60 秒，答完交接收起，别偷看
+          - paragraph [ref=e266]: ③ AI 评委逐轮打 0-10 分，三轮终盘复盘、评出金句
+        - generic [ref=e267]:
+          - textbox "玩家一的名字" [ref=e268]: 玩家一
+          - generic [ref=e269]: VS
+          - textbox "玩家二的名字" [ref=e270]: 玩家二
+        - button "开始对战" [ref=e272] [cursor=pointer]

@@ -9,6 +9,13 @@ import { saveSettings } from '../src/lib/settings.js';
 import { pickTitle } from '../src/data/titles.js';
 import { STICKERS, STICKER_IDS, matchSticker, stickerById, pickAiSticker } from '../src/data/stickers.js';
 import { HIT_LABELS, EQ_HIT_LABELS } from '../src/data/fallbacks.js';
+import {
+  QR_URL,
+  FALLBACK_QUOTE,
+  pickGoldenQuote,
+  quoteTagFor,
+  buildQrMatrix,
+} from '../src/lib/share-card.js';
 
 const fail = (msg) => {
   console.error('✗', msg);
@@ -536,5 +543,123 @@ Math.random = realRandom;
 if (!localSticker.sticker) fail('本地引擎在玩家先发贴纸时应大概率回敬（rand=0 必发）');
 console.log('✓ 本地引擎贴纸：玩家先发时回敬（确定性 rand 验证）');
 
+// 6.12 Anthropic 通道：贴纸轮引入的 ctx 引用 bug 曾让这条路径一调用就 ReferenceError 静默降级 —— 假 fetch 锁住
+saveSettings({ provider: 'anthropic', apiKey: 'sk-ant-fake-key-000000', model: '', baseUrl: '' });
+global.fetch = async (url, init) => {
+  captured = { url, init };
+  // SDK 对 Response 形状挑剔（headers.entries / text / json 都要真有）——用真 Response 最稳
+  return new Response(
+    JSON.stringify({
+      content: [{ type: 'text', text: '{"reply":"还行。","hitType":"hit"}' }],
+      stop_reason: 'end_turn',
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
+};
+const anthropicVerdict = await generateTurn({ persona, duel: createDuel(persona), userText: '测试一下' });
+if (anthropicVerdict.source !== 'remote' || anthropicVerdict.reply !== '还行。') {
+  fail('Anthropic 通道应能出远程台词（曾因 ctx 引用 ReferenceError 被吞成本地降级）：' + JSON.stringify(anthropicVerdict));
+}
+if (anthropicVerdict.fallback) fail('Anthropic 通道成功时不该带降级原因：' + anthropicVerdict.fallback);
+console.log('✓ Anthropic 通道：SDK 路径真走通且解析成功（ctx bug 回归锁）');
+
 delete global.localStorage;
 delete global.fetch;
+
+
+/* ------------------------------------------------------------------ */
+/* 7. 战绩图（A3 传播化）：金句选取 + 二维码矩阵                          */
+/* ------------------------------------------------------------------ */
+
+// 造一个只带 pickGoldenQuote 关心字段的假局：选取逻辑是对局数据形状的纯函数，
+// 真引擎产出的 rounds 字段同名，7.6 再用真 recordTurn 对一次方向
+const fakeDuel = (mode, rounds) => ({ mode, rounds });
+const R = (userText, delta, hitType = 'hit') => ({ userText, aiReply: `回${delta}`, hitType, delta });
+const SOFT = (userText, delta) => R(userText, delta, 'softspot');
+
+// 7.1 点火局：取正伤害里 delta 最大且有文字的回合（miss/self_destruct 不参选）
+const g1 = fakeDuel('fire', [
+  R('你说的有证据吗', 0, 'miss'),
+  R('这话跟你没关系吧', 12),
+  SOFT('您家孩子在哪儿高就', 30),
+  R('你懂个屁', -12, 'self_destruct'),
+]);
+const q1 = pickGoldenQuote(g1);
+if (!q1 || q1.userText !== '您家孩子在哪儿高就' || q1.delta !== 30) {
+  fail('点火局金句应选 delta 最大的有效回合：' + JSON.stringify(q1));
+}
+
+// 7.2 无文字回合（纯斗图/沉默）不参选，即便 delta 高
+const g2 = fakeDuel('fire', [
+  { userText: '', aiReply: '……', hitType: 'sticker', delta: 30, stickerId: 'smug' },
+  R('这话跟你没关系吧', 12),
+]);
+const q2 = pickGoldenQuote(g2);
+if (!q2 || q2.userText !== '这话跟你没关系吧') {
+  fail('纯斗图/沉默回合不该当选金句：' + JSON.stringify(q2));
+}
+
+// 7.3 灭火局：存档 delta 已翻转，选最负（安抚最深）的一手
+const g3 = fakeDuel('extinguish', [
+  SOFT('我听你说', -30),
+  R('我知道你不好受', -12),
+  R('你懂个屁', 12, 'self_destruct'),
+]);
+const q3 = pickGoldenQuote(g3);
+if (!q3 || q3.userText !== '我听你说' || q3.delta !== -30) {
+  fail('灭火局金句应选 delta 最负的回合：' + JSON.stringify(q3));
+}
+
+// 7.4 全程没落在点上（全 miss/自爆/无文字）→ null，卡片走兜底文案
+if (pickGoldenQuote(fakeDuel('fire', [R('嗯', 0, 'miss'), R('去死', -12, 'self_destruct')]))) {
+  fail('没有有效命中的局不该选出金句');
+}
+if (pickGoldenQuote(fakeDuel('fire', [])) !== null) fail('空局应返回 null');
+if (pickGoldenQuote(fakeDuel('extinguish', [R('嗯。', 0, 'miss'), { userText: '', aiReply: '……', hitType: 'sticker', delta: -8 }]))) {
+  fail('灭火局全无效回合也应返回 null');
+}
+if (typeof FALLBACK_QUOTE !== 'string' || !FALLBACK_QUOTE) fail('FALLBACK_QUOTE 应是非空兜底文案');
+
+// 7.5 标签文案：点火局带 +Δ，灭火局带翻转前的降幅
+if (quoteTagFor(g1) !== '本局最痛一击 +30') fail('点火局标签文案不对：' + quoteTagFor(g1));
+if (quoteTagFor(g3) !== '本局最暖心一击 怒气-30') fail('灭火局标签文案不对：' + quoteTagFor(g3));
+if (quoteTagFor(fakeDuel('fire', [R('嗯', 0, 'miss')])) !== null) fail('无金句时标签应为 null');
+
+// 7.6 真 recordTurn 对方向：灭火局翻转后的存档 delta 能被正确选中
+const eqQuote = createDuel(EQ_PERSONA);
+recordTurn(eqQuote, { userText: '我知道你不好受', aiReply: '……', hitType: 'hit', quip: '' }); // -12
+const eqBest = recordTurn(eqQuote, { userText: '我听你说', aiReply: '……', hitType: 'softspot', softspot: EQ_PERSONA.softspots[0], quip: '' }); // -30
+const q6 = pickGoldenQuote(eqQuote);
+if (!q6 || q6.userText !== '我听你说' || q6.delta !== eqBest.delta) {
+  fail('真引擎灭火局应选中 -30 的心结回合：' + JSON.stringify(q6));
+}
+
+// 7.7 二维码：链接常量 + 矩阵结构（合法尺寸、三角 finder pattern、确定性）
+if (QR_URL !== 'https://gang.debugzi.com') fail('二维码应编码正式链接 gang.debugzi.com：' + QR_URL);
+const m1 = buildQrMatrix(QR_URL);
+if (!m1 || (m1.size - 21) % 4 !== 0 || m1.size < 21) fail('QR 尺寸应为 21+4k，实际 ' + m1?.size);
+// finder pattern：左上/右上/左下三块 7×7 = 深色边环 + 3×3 实心核
+const finderOk = (m, top, left) => {
+  for (let r = 0; r < 7; r += 1) {
+    for (let c = 0; c < 7; c += 1) {
+      const ring = r === 0 || r === 6 || c === 0 || c === 6;
+      const core = r >= 2 && r <= 4 && c >= 2 && c <= 4;
+      if (m.isDark(top + r, left + c) !== (ring || core)) return false;
+    }
+  }
+  return true;
+};
+if (!finderOk(m1, 0, 0) || !finderOk(m1, 0, m1.size - 7) || !finderOk(m1, m1.size - 7, 0)) {
+  fail('QR 三个角的 finder pattern 不完整');
+}
+const m2 = buildQrMatrix(QR_URL);
+let same = m2.size === m1.size;
+if (same) {
+  for (let r = 0; r < m1.size && same; r += 1) {
+    for (let c = 0; c < m1.size; c += 1) {
+      if (m1.isDark(r, c) !== m2.isDark(r, c)) { same = false; break; }
+    }
+  }
+}
+if (!same) fail('同一链接两次生成的 QR 矩阵应一致');
+console.log('✓ 战绩图：金句方向感知选取 / 斗图沉默排除 / 空局兜底 / 标签文案 / QR 矩阵结构');

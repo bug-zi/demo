@@ -23,17 +23,18 @@ await import('../src/main.js');
 const $ = (sel) => window.document.querySelector(sel);
 const $$ = (sel) => [...window.document.querySelectorAll(sel)];
 
-// 1. 大厅：初始屏，三张模块卡（主卡 + 资料库可点，一张锁定）
+// 1. 大厅：初始屏，三张模块卡全解锁（主卡 + 资料库 + 擂台都可点）
 if (!$('.lobby')) fail('初始屏应该是大厅，实际没有 .lobby');
 const moduleCards = $$('.module-card');
 if (moduleCards.length !== 3) fail(`大厅应有 3 张模块卡，实际 ${moduleCards.length}`);
-const lockedCards = $$('.module-card.locked');
-if (lockedCards.length !== 1) fail(`应有一张锁定卡（擂台），实际 ${lockedCards.length}`);
-if (lockedCards.some((c) => !c.disabled)) fail('锁定卡应该是 disabled，不可点');
+if ($$('.module-card.locked').length !== 0) fail('三模块全解锁后大厅不该有锁定卡');
 if (!$('.module-card.primary')) fail('应该有主卡（对线房）');
 const libCard = $('.module-card.library');
 if (!libCard) fail('资料库应该是真卡（.module-card.library），不是锁定卡');
 if (libCard.disabled) fail('资料库卡应该可点');
+const arenaCard = $('.module-card.arena');
+if (!arenaCard) fail('擂台应该是真卡（.module-card.arena）');
+if (arenaCard.disabled) fail('擂台卡应该可点');
 // 1b. 2.0 改名：嘴强王者 · TALK KING，主卡更名对线房
 if (window.document.title !== '嘴强王者 · TALK KING') fail('页面标题应为「嘴强王者 · TALK KING」，实际「' + window.document.title + '」');
 if (!$('.brand').textContent.includes('嘴强王者')) fail('顶栏品牌应为嘴强王者');
@@ -45,7 +46,7 @@ if (!$('.lobby .hero-sub').textContent.includes('对线房')) fail('大厅副标
 console.log('✓ 2.0 改名：标题/品牌/主卡（对线房）');
 if ($('.module-card.primary .module-badge')) fail('没有进行中对局时，主卡不该有角标');
 if (!$('.connect-hint')) fail('未配置 AI 时大厅也应有接入提示');
-console.log('✓ 大厅初始：3 模块卡，主卡 + 2 锁定卡 + 接入提示');
+console.log('✓ 大厅初始：3 模块卡全解锁（对线房/资料库/擂台）+ 接入提示');
 if ($('#engine-badge').textContent !== '本地引擎') fail('徽章文案不对');
 
 // 2. 主卡 → 选人屏；选人屏可返回大厅，返回后再进是全新选人
@@ -393,7 +394,7 @@ if (!$$('.entry-card').some((c) => c.textContent.includes('验收用的自建句
 // 返回大厅
 $('.library .back-btn').click();
 if (!$('.lobby')) fail('资料库「← 大厅」应回大厅');
-if (!$('.module-card.locked')) fail('擂台应仍是锁定卡');
+if (!$('.module-card.arena') || $('.module-card.arena').disabled) fail('擂台应保持真卡可点');
 // 起一局再进资料库往返：进行中角标不受影响
 $('.module-card.primary').click();
 $$('.persona-card:not(.locked)')[1].click();
@@ -579,6 +580,95 @@ if (!sawMutedMe) fail('败北时应把自己最后的气泡灰掉（.bubble-me.m
 if (!sawCantSpeak) fail('败北文案应出现「你说不出话了」');
 if (!$('.report')) fail('败北演出放完应进报告屏');
 console.log('✓ 败北演出：自己气泡变灰 + 你说不出话了');
+
+/* ------------------------------------------------------------------ */
+/* 17. 好友擂台：大厅解锁 + hot-seat 全流程（本地评分，未配 key）          */
+/* ------------------------------------------------------------------ */
+
+const backToLobby17 = $$('.report-actions .btn').find((b) => b.textContent === '返回大厅');
+if (!backToLobby17) fail('17 节前置：报告屏应有「返回大厅」');
+backToLobby17.click();
+if (!$('.lobby')) fail('17 节前置：应回到大厅');
+
+// 大厅：三张真卡，零锁定卡（擂台解锁是最后一块）
+const lobbyCards17 = $$('.module-card');
+if (lobbyCards17.length !== 3) fail(`大厅应有 3 张模块卡，实际 ${lobbyCards17.length}`);
+if ($$('.module-card.locked').length !== 0) fail('擂台解锁后大厅不该再有锁定卡');
+const arenaCard17 = $('.module-card.arena');
+if (!arenaCard17 || arenaCard17.disabled) fail('擂台应是可点的真卡（.module-card.arena）');
+if ($('.lobby .footnote').textContent.includes('装修')) fail('三模块全解锁后，大厅脚注不该再说「正在装修」');
+arenaCard17.click();
+if (!$('.arena')) fail('点擂台卡应进入擂台视图');
+if (!$('.arena-intro')) fail('擂台开局应是 intro 相位');
+if ($$('.arena-name-input').length !== 2) fail('intro 应有双方名字输入框');
+
+// 命名开局 → 第 1 轮 P1 先答 → 场景卡 + 60 秒倒计时
+$$('.arena-name-input')[0].value = '甲哥';
+$$('.arena-name-input')[1].value = '乙姐';
+$('.arena-start').click();
+if (!$('.arena-round')) fail('开局应进第 1 轮答题相位');
+if (!$('.scenario-line') || !$('.scenario-line').textContent.trim()) fail('场景原话应大字渲染');
+if ($('.arena-timer')?.textContent !== '60s') fail(`答题倒计时应为 60s，实际「${$('.arena-timer')?.textContent}」`);
+if (!$('.arena-round-meta').textContent.includes('甲哥')) fail('第 1 轮先答者应为甲哥（P1）');
+
+// P1 提交 → 交接屏：交给乙姐、答案不泄漏
+const p1Line17 = '这一句是我认真写的话一共十几个字呢';
+$('.arena-input').value = p1Line17;
+$('.arena-send').click();
+if (!$('.arena-handoff')) fail('P1 提交后应进交接屏');
+if (!$('.arena-handoff').textContent.includes('乙姐')) fail('交接屏应提示交给乙姐');
+if (window.document.body.textContent.includes(p1Line17)) fail('交接屏不得泄漏先答者的答案');
+$('.handoff-btn').click();
+
+// P2 答题 → 本地评分揭晓（双侧 0-10 + 短评）
+$('.arena-input').value = '嗯';
+$('.arena-send').click();
+await new Promise((r) => setTimeout(r, 900));
+if (!$('.arena-reveal')) fail('双方答完应出评分揭晓');
+if ($$('.reveal-card').length !== 2) fail(`揭晓应有两张答案卡，实际 ${$$('.reveal-card').length}`);
+if ($$('.reveal-score').some((el) => !(Number(el.textContent) >= 0 && Number(el.textContent) <= 10))) {
+  fail('分数应都在 0-10');
+}
+if ($$('.reveal-comment').some((el) => !el.textContent.trim())) fail('双方短评不应为空');
+$('.arena-next').click();
+
+// 第 2 轮 P2 先答（先答权轮换）→ 打完全场
+if (!$('.arena-round')) fail('第 2 轮应进新答题相位');
+if (!$('.arena-round-meta').textContent.includes('乙姐')) fail('第 2 轮先答者应为乙姐（P2）');
+async function finishRound17(firstText, secondText) {
+  $('.arena-input').value = firstText;
+  $('.arena-send').click();
+  if (!$('.arena-handoff')) fail('先答提交后应进交接屏');
+  $('.handoff-btn').click();
+  $('.arena-input').value = secondText;
+  $('.arena-send').click();
+  await new Promise((r) => setTimeout(r, 900));
+}
+const p1Long17 = '我这边也是一句很稳很长的话不输任何人';
+await finishRound17('嗯', p1Long17);
+if (!$('.arena-reveal')) fail('第 2 轮应出揭晓');
+$('.arena-next').click();
+await finishRound17(p1Long17, '嗯');
+$('.arena-next').click(); // 末轮按钮是「看终盘复盘」
+await new Promise((r) => setTimeout(r, 900));
+
+// 终盘复盘：引擎判胜 + 逐轮表 + 金句 + 本地粗评提示（未配 key）
+if (!$('.arena-recap')) fail('三轮打完应出终盘复盘');
+if (!$('.recap-winner').textContent.includes('甲哥') || !$('.recap-winner').textContent.includes('胜出')) {
+  fail('胜者标题应为「甲哥 胜出」（本地评分 15:6）：' + $('.recap-winner').textContent);
+}
+if ($$('.recap-round-row').length !== 3) fail(`逐轮小表应 3 行，实际 ${$$('.recap-round-row').length}`);
+if (!$('.golden-card') || !$('.golden-card').textContent.includes(p1Line17)) fail('金句卡应含甲哥的最高分句');
+if (!$('.arena-hint') || !$('.arena-hint').textContent.includes('本地粗评')) fail('未接入 AI 时终盘应有「本地粗评」提示');
+
+// 返回大厅：擂台离场即弃局，再进是全新一场
+const arenaBack17 = $$('.arena-recap .btn').find((b) => b.textContent === '返回大厅');
+if (!arenaBack17) fail('终盘应有「返回大厅」按钮');
+arenaBack17.click();
+if (!$('.lobby')) fail('擂台「返回大厅」应回大厅');
+$('.module-card.arena').click();
+if (!$('.arena-intro')) fail('再进擂台应是全新一场（离场即弃局）');
+console.log('✓ 好友擂台：大厅解锁/交接屏防偷看/先答轮换/逐轮评分/终盘复盘/返回大厅');
 
 console.log('\n全部通过 ✅');
 process.exit(0);

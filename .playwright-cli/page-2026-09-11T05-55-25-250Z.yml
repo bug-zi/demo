@@ -1,0 +1,28 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]: 嘴强王者TALK KING
+    - generic [ref=e5]:
+      - generic [ref=e6]: 本地引擎
+      - button "皮肤选择" [ref=e7] [cursor=pointer]
+      - button "切换到深色主题" [ref=e9] [cursor=pointer]
+      - button "接入你的 AI" [ref=e11] [cursor=pointer]
+      - button "声音" [ref=e13] [cursor=pointer]
+  - main [ref=e15]:
+    - generic [ref=e37]:
+      - button "← 大厅" [ref=e218] [cursor=pointer]
+      - generic [ref=e219]:
+        - heading "好友擂台" [level=1] [ref=e220]
+        - paragraph [ref=e221]: 第 3 / 3 轮 · 战报
+      - generic [ref=e222]:
+        - generic [ref=e223]:
+          - article [ref=e224]:
+            - generic [ref=e225]: 甲哥
+            - paragraph [ref=e226]: 那就这么定了，周三见
+            - generic [ref=e227]: "4"
+            - paragraph [ref=e228]: 粗评：四平八稳，没踩到分点。
+          - article [ref=e229]:
+            - generic [ref=e230]: 乙姐
+            - paragraph [ref=e231]: 好嘞
+            - generic [ref=e232]: "2"
+            - paragraph [ref=e233]: 粗评：四平八稳，没踩到分点。
+        - button "看终盘复盘" [ref=e235] [cursor=pointer]
