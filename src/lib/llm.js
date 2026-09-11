@@ -8,8 +8,10 @@
  *      一律 `POST {baseUrl}/chat/completions`。
  *
  * 无论走哪条路，返回的都是同一个结构：
- *   { reply, hitType, quip, source }
+ *   { reply, hitType, quip, source, judgeScore? }
  * 上层（main.js / duel-engine.js）不关心是谁生成的。
+ * judgeScore 只有远程那条路有 —— 本地那 20% 由 duel-engine 的 localJudge 出，
+ * 那是引擎的活儿，不是「大脑」的。
  *
  * 配置来源，优先级从高到低：
  *   1. 用户在界面里填的（localStorage，见 settings.js）
@@ -26,7 +28,7 @@ import {
   SELF_DESTRUCT_REACTIONS,
   pick,
 } from '../data/fallbacks.js';
-import { localHitType, matchSoftspot, stageOf } from './duel-engine.js';
+import { clampJudge, localHitType, matchSoftspot, stageOf } from './duel-engine.js';
 import { loadSettings } from './settings.js';
 
 const ENV = (typeof import.meta !== 'undefined' && import.meta.env) || {};
@@ -80,8 +82,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* 本地引擎                                                            */
 /* ------------------------------------------------------------------ */
 
-function localTurn({ persona, duel, userText }) {
-  const stage = stageOf(duel.anger);
+function localTurn({ persona, duel, userText, usedPreset }) {
+  const stage = stageOf(duel.breakdown);
   const hitType = localHitType(persona, userText);
   const spot = hitType === 'softspot' ? matchSoftspot(persona, userText) : null;
 
@@ -91,6 +93,10 @@ function localTurn({ persona, duel, userText }) {
   } else if (spot) {
     // 软肋台词优先；万一人设没写这条，退回当前阶段的台词
     reply = pick(persona.softspotReactions[spot.key] || persona.stages[stage.id]);
+  } else if (usedPreset && persona.presetReplies?.[userText]) {
+    // 诱饵预设：选项本身就是陷阱（甲方那个「我这就去改」），没有专属台词的话
+    // 它只是白扔一个回合；有的话玩家能看清自己是怎么被哄的
+    reply = persona.presetReplies[userText];
   } else if (stage.id === 'breakdown') {
     reply = pick(persona.breakdown);
   } else {
@@ -121,13 +127,20 @@ const TURN_SCHEMA = {
       enum: HIT_TYPES,
       description: '玩家这句话对这个角色的效果',
     },
+    score: {
+      type: 'integer',
+      description:
+        '你独立给这句话打的杀伤力分（-15 ~ 35）：30 左右=正中软肋把你说不出话，' +
+        '12 左右=有道理你有点难接，0=不痛不痒，负数=玩家自己在露怯。' +
+        '这一项占最终破防值涨幅的 20%，跟 hitType 不必一致。',
+    },
   },
-  required: ['reply', 'hitType'],
+  required: ['reply', 'hitType', 'score'],
   additionalProperties: false,
 };
 
 function buildSystemPrompt(persona, duel) {
-  const stage = stageOf(duel.anger);
+  const stage = stageOf(duel.breakdown);
   const spots = persona.softspots
     .map((s) => `- ${s.label}（比如说到：${s.keywords.slice(0, 3).join('、')}）`)
     .join('\n');
@@ -144,20 +157,27 @@ function buildSystemPrompt(persona, duel) {
     spots,
     ``,
     `# 当前状态`,
-    `怒气值：${duel.anger}/100`,
+    `破防值：${duel.breakdown}/100`,
     `情绪阶段：${stage.label}（0-35 礼貌，35-65 阴阳怪气，65-85 开始上头，85-100 已经破防）`,
     ``,
     `# 规则`,
     `1. 只说一句话，不超过 80 个字。不要动作描写，不要加引号，不要旁白。`,
-    `2. 语气必须匹配当前情绪阶段。怒气越高越失控。`,
+    `2. 语气必须匹配当前情绪阶段。破防值越高越失控。`,
     `3. 绝对禁止脏话、侮辱性词汇、地域/性别/职业歧视。破防的表现是沉默、敷衍、想退出、拉黑，而不是骂人。`,
     `4. 判断玩家这句话对你的效果，选一个 hitType：`,
     `   - softspot：玩家戳中了上面列的软肋，你被噎住了`,
     `   - hit：说得有道理，你有点难接`,
     `   - miss：没什么力度，你可以轻松怼回去`,
     `   - self_destruct：玩家自己上头了（骂人、人身攻击、语无伦次），你反而占了上风`,
-    `5. 不要跳出角色。不要解释规则。不要提到自己是 AI。`,
-    `6. 只输出 JSON，形如 {"reply": "...", "hitType": "..."}，不要加任何别的字。`,
+    `5. 再给这句话单独打一个 score（判断分），这是你对它杀伤力的独立判断，`,
+    `   最终破防值涨幅 = 查表值 × 80% + 你的 score × 20%：`,
+    `   - 30 左右：正中软肋，你真的被噎住了`,
+    `   - 12 左右：说得有道理，你有点难接`,
+    `   - 0 左右：不痛不痒，说完就过`,
+    `   - 负数：玩家自己在露怯（复读、说废话、逻辑崩了、光顾着骂人）`,
+    `   score 跟 hitType 不必一致：同样是 softspot，一句敷衍的和一句把人噎死的，分数该不一样。`,
+    `6. 不要跳出角色。不要解释规则。不要提到自己是 AI。`,
+    `7. 只输出 JSON，形如 {"reply": "...", "hitType": "...", "score": 30}，不要加任何别的字。`,
   ].join('\n');
 }
 
@@ -171,7 +191,7 @@ function buildMessages(duel, userText) {
     // 上下文里的范例永远比指令有力。这里把它自己的历史也写成 JSON，示范给它看。
     history.push({
       role: 'assistant',
-      content: JSON.stringify({ reply: r.aiReply, hitType: r.hitType }),
+      content: JSON.stringify({ reply: r.aiReply, hitType: r.hitType, score: r.judgeDelta }),
     });
   }
   history.push({ role: 'user', content: userText });
@@ -205,6 +225,9 @@ function toTurn(parsed, persona, userText) {
   return {
     reply: String(parsed?.reply || '').slice(0, 120),
     hitType,
+    // 20% 那部分的原料。模型没给 / 给了个乱七八糟的值 → null，
+    // recordTurn 会退回本地打分，不至于让这一回合少算一块
+    judgeScore: clampJudge(parsed?.score),
     softspot: hitType === 'softspot' ? matchSoftspot(persona, userText) : null,
     quip: HIT_QUIPS[hitType],
     source: 'remote',
@@ -274,7 +297,7 @@ function openAiBody(config, { persona, duel, userText }, withJsonMode, reminder)
   if (reminder) {
     messages.push({
       role: 'user',
-      content: '（系统提醒：只输出 JSON，形如 {"reply":"...","hitType":"..."}，不要加任何别的字。）',
+      content: '（系统提醒：只输出 JSON，形如 {"reply":"...","hitType":"...","score":30}，不要加任何别的字。）',
     });
   }
   return {
@@ -428,12 +451,16 @@ function describeError(err) {
  * 降级时会带上 `fallback`（人话的失败原因），界面把它显示成一行小字 ——
  * 否则「这回合到底是 AI 说的还是模板说的」在游戏里根本看不出来。
  *
+ * `usedPreset` 只有本地引擎用得上：它决定要不要走 persona.presetReplies
+ * （诱饵预设的专属回应）。远程通道由模型自己接话。
+ *
+ * @param {{persona:object, duel:object, userText:string, usedPreset?:boolean}} ctx
  * @returns {Promise<{reply:string, hitType:string, softspot:object|null, quip:string, source:string, fallback?:string}>}
  */
-export async function generateTurn({ persona, duel, userText }) {
+export async function generateTurn({ persona, duel, userText, usedPreset = false }) {
   const config = resolveConfig();
   if (config.provider !== 'local') {
-    const ctx = { persona, duel, userText };
+    const ctx = { persona, duel, userText, usedPreset };
     try {
       const turn =
         config.provider === 'anthropic'
@@ -454,7 +481,7 @@ export async function generateTurn({ persona, duel, userText }) {
     }
   }
   await sleep(350 + Math.random() * 450);
-  return localTurn({ persona, duel, userText });
+  return localTurn({ persona, duel, userText, usedPreset });
 }
 
 /**

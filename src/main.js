@@ -12,16 +12,31 @@ import { pickTitle } from './data/titles.js';
 import {
   MAX_ROUNDS,
   MAX_SELF_DESTRUCTS,
-  ROUND_SECONDS,
   createDuel,
   currentRound,
   recordTurn,
   stageOf,
   uniqueSoftspotHits,
 } from './lib/duel-engine.js';
+import {
+  DEFAULT_DIFFICULTY,
+  DIFFICULTIES,
+  getDifficulty,
+  secondsOf,
+} from './data/difficulty.js';
 import { engineLabel, generateTurn, isRemote } from './lib/llm.js';
 import { blip, isSoundEnabled, setSoundEnabled } from './lib/audio.js';
+import {
+  applyTheme,
+  initTheme,
+  loadTheme,
+  nextTheme,
+  paintThemeButton,
+  saveTheme,
+} from './lib/theme.js';
+import { MAX_INPUT, clip } from './lib/text.js';
 import { h } from './lib/dom.js';
+import { createEmojiPicker } from './ui/emoji-picker.js';
 import { openSettings } from './ui/settings-dialog.js';
 
 const screenEl = document.getElementById('screen');
@@ -31,10 +46,11 @@ const state = {
   duel: null,
   busy: false,
   timerId: null,
-  secondsLeft: ROUND_SECONDS,
+  difficulty: DEFAULT_DIFFICULTY,
+  secondsLeft: secondsOf(DEFAULT_DIFFICULTY),
 };
 
-/** 当前屏幕里需要原地更新的节点。 */
+/** 当前屏幕里需要原地更新的节点（外加少数几个控制器句柄，比如 refs.picker）。 */
 const refs = {};
 
 /* ------------------------------------------------------------------ */
@@ -44,6 +60,17 @@ const refs = {};
 function scrollLogToBottom() {
   if (!refs.log) return;
   refs.log.scrollTop = refs.log.scrollHeight;
+}
+
+/**
+ * 输入框还剩多少字。emoji 占两个 UTF-16 单位、看着却只有一个字符，
+ * 不把数亮出来，玩家会莫名其妙发现「字还没打满就不让打了」。
+ */
+function syncCounter() {
+  if (!refs.counter || !refs.input) return;
+  const used = refs.input.value.length;
+  refs.counter.textContent = `${used} / ${MAX_INPUT}`;
+  refs.counter.classList.toggle('is-near', used >= MAX_INPUT * 0.9);
 }
 
 /* ------------------------------------------------------------------ */
@@ -77,12 +104,55 @@ function viewSelect() {
         text: '选一个对手。你的目标不是把道理讲赢——是让他先绷不住。',
       }),
     ),
+    difficultyControl(),
     h('div', { class: 'persona-grid' }, PERSONAS.map(personaCard)),
     h('p', {
       class: 'footnote',
       text: '每个人都有软肋，藏着的那种。但话说太冲，先破防的可能是你自己。',
     }),
     isRemote() ? null : connectHint(),
+  );
+}
+
+/**
+ * 难度选择器：只改每回合的输入时限，不动胜负规则。
+ * 原地切 class 而不是重绘整屏 —— 重绘会把选人屏的滚动位置抖一下。
+ */
+function difficultyControl() {
+  const note = h('p', { class: 'diff-note' });
+
+  const paintNote = () => {
+    const { seconds, note: text } = getDifficulty(state.difficulty);
+    note.textContent = `每回合 ${seconds} 秒 —— ${text}`;
+  };
+
+  const buttons = DIFFICULTIES.map((item) =>
+    h('button', {
+      class: `seg-btn${state.difficulty === item.id ? ' is-active' : ''}`,
+      type: 'button',
+      text: `${item.label} ${item.seconds}s`,
+      'aria-pressed': String(state.difficulty === item.id),
+      onclick: () => {
+        if (state.difficulty === item.id) return;
+        state.difficulty = item.id;
+        DIFFICULTIES.forEach((d, index) => {
+          const active = d.id === item.id;
+          buttons[index].classList.toggle('is-active', active);
+          buttons[index].setAttribute('aria-pressed', String(active));
+        });
+        paintNote();
+        blip('reply');
+      },
+    }),
+  );
+
+  paintNote();
+  return h(
+    'div',
+    { class: 'diff' },
+    h('span', { class: 'diff-head', text: '难度' }),
+    h('div', { class: 'segmented diff-seg' }, buttons),
+    note,
   );
 }
 
@@ -107,6 +177,8 @@ function personaCard(persona) {
     {
       class: 'persona-card',
       type: 'button',
+      // 给测试用的抓手：卡片顺序会随人设增减变，按 id 选才不会选错对手
+      'data-persona': persona.id,
       onclick: () => startDuel(persona.id),
     },
     h(
@@ -137,7 +209,7 @@ function startDuel(personaId) {
   if (!persona) return;
   state.duel = createDuel(persona);
   state.busy = false;
-  state.secondsLeft = ROUND_SECONDS;
+  state.secondsLeft = secondsOf(state.difficulty);
   state.screen = 'duel';
   render();
 }
@@ -145,7 +217,7 @@ function startDuel(personaId) {
 function viewDuel() {
   const { duel } = state;
   const persona = duel.persona;
-  const stage = stageOf(duel.anger);
+  const stage = stageOf(duel.breakdown);
 
   refs.log = h('div', { class: 'log' });
   refs.log.append(bubbleAI(persona.opener));
@@ -156,8 +228,8 @@ function viewDuel() {
     refs.log.append(quipLine(round));
   }
 
-  refs.angerFill = h('div', { class: 'anger-fill', style: `width:${duel.anger}%` });
-  refs.angerNum = h('span', { class: 'anger-num', text: String(duel.anger) });
+  refs.meterFill = h('div', { class: 'meter-fill', style: `width:${duel.breakdown}%` });
+  refs.meterNum = h('span', { class: 'meter-num', text: String(duel.breakdown) });
   refs.stagePill = h('span', {
     class: `stage-pill stage-${stage.id}`,
     text: stage.label,
@@ -171,7 +243,7 @@ function viewDuel() {
   refs.input = h('textarea', {
     class: 'input',
     rows: '2',
-    maxlength: '100',
+    maxlength: String(MAX_INPUT),
     placeholder: '说点什么，让他绷不住…（Enter 发送，Shift+Enter 换行）',
   });
   refs.input.addEventListener('keydown', (event) => {
@@ -179,6 +251,16 @@ function viewDuel() {
       event.preventDefault();
       submitTurn(refs.input.value, {});
     }
+  });
+  refs.input.addEventListener('input', syncCounter);
+
+  // 表情面板：点一个插到光标处。它自己管开关，我们只负责给声音和刷新字数
+  refs.picker = createEmojiPicker({
+    field: refs.input,
+    onInsert: () => {
+      syncCounter();
+      blip('reply');
+    },
   });
 
   const sendBtn = h('button', {
@@ -188,6 +270,9 @@ function viewDuel() {
     onclick: () => submitTurn(refs.input.value, {}),
   });
   refs.sendBtn = sendBtn;
+
+  refs.counter = h('span', { class: 'counter' });
+  syncCounter();
 
   const presetRow = h(
     'div',
@@ -208,6 +293,7 @@ function viewDuel() {
         },
       }),
     ),
+    refs.counter,
   );
 
   const root = h(
@@ -225,29 +311,40 @@ function viewDuel() {
           h('div', { class: 'persona-tagline small', text: `「${persona.tagline}」` }),
         ),
       ),
-      h('div', { class: 'duel-meta' }, refs.roundLabel, refs.timerLabel),
+      h(
+        'div',
+        { class: 'duel-meta' },
+        h('span', { class: 'diff-pill', text: getDifficulty(state.difficulty).label }),
+        refs.roundLabel,
+        refs.timerLabel,
+      ),
     ),
     h(
       'div',
-      { class: 'anger' },
+      { class: 'meter' },
       h(
         'div',
-        { class: 'anger-head' },
-        h('span', { class: 'anger-label', text: '怒气值' }),
-        refs.angerNum,
+        { class: 'meter-head' },
+        h('span', { class: 'meter-label', text: '破防值' }),
+        refs.meterNum,
         refs.stagePill,
       ),
       h(
         'div',
-        { class: 'anger-track' },
-        refs.angerFill,
-        h('div', { class: 'anger-tick', style: 'left:35%' }),
-        h('div', { class: 'anger-tick', style: 'left:65%' }),
-        h('div', { class: 'anger-tick', style: 'left:85%' }),
+        { class: 'meter-track' },
+        refs.meterFill,
+        h('div', { class: 'meter-tick', style: 'left:35%' }),
+        h('div', { class: 'meter-tick', style: 'left:65%' }),
+        h('div', { class: 'meter-tick', style: 'left:85%' }),
       ),
     ),
     refs.log,
-    h('div', { class: 'composer' }, presetRow, h('div', { class: 'input-row' }, refs.input, sendBtn)),
+    h(
+      'div',
+      { class: 'composer' },
+      presetRow,
+      h('div', { class: 'input-row' }, refs.picker.el, refs.input, sendBtn),
+    ),
   );
 
   requestAnimationFrame(() => {
@@ -280,13 +377,22 @@ function fallbackLine(reason) {
   );
 }
 
+/** 带正负号的数字：+12 / -3。破防值的每条数字都这么显示。 */
+function signed(n) {
+  return `${n > 0 ? '+' : ''}${n}`;
+}
+
+/** 80/20 是怎么算出来的。悬停能看到，不占对线屏的地方。 */
+function deltaMath(round) {
+  return `查表 ${signed(round.tableDelta)} × 80% + 判断 ${signed(round.judgeDelta)} × 20% = ${signed(round.delta)}`;
+}
+
 function quipLine(round) {
-  const sign = round.delta > 0 ? '+' : '';
   return h(
     'div',
-    { class: `quip quip-${round.hitType}` },
+    { class: `quip quip-${round.hitType}`, title: deltaMath(round) },
     h('span', { class: 'quip-tag', text: HIT_LABELS[round.hitType] || '回合' }),
-    h('span', { class: 'quip-text', text: `${round.quip || ''} ${sign}${round.delta}` }),
+    h('span', { class: 'quip-text', text: `${round.quip || ''} ${signed(round.delta)}` }),
   );
 }
 
@@ -297,7 +403,8 @@ function quipLine(round) {
 async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
   if (state.busy || !state.duel || state.duel.result) return;
 
-  const text = String(rawText || '').trim().slice(0, 100);
+  // clip 而不是 slice：正好卡在上限上时，slice 会把一个 emoji 劈成半个
+  const text = clip(String(rawText || '').trim());
   if (!text && !timeout) {
     refs.input?.focus();
     return;
@@ -305,13 +412,16 @@ async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
 
   state.busy = true;
   stopTimer();
+  refs.picker?.close();
 
   const userText = text || SILENCE_TEXT;
 
   refs.log.append(bubbleMe(userText));
   if (refs.input) refs.input.value = '';
+  syncCounter();
   if (refs.sendBtn) refs.sendBtn.disabled = true;
   if (refs.input) refs.input.disabled = true;
+  refs.picker?.setDisabled(true);
   scrollLogToBottom();
   blip('send');
 
@@ -324,7 +434,12 @@ async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
 
   let turn;
   try {
-    turn = await generateTurn({ persona: state.duel.persona, duel: state.duel, userText });
+    turn = await generateTurn({
+      persona: state.duel.persona,
+      duel: state.duel,
+      userText,
+      usedPreset: Boolean(preset),
+    });
   } catch (err) {
     console.error('[杠精陪练房] 生成失败：', err);
     turn = { reply: '……', hitType: 'miss', quip: '', softspot: null };
@@ -338,6 +453,7 @@ async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
     hitType: turn.hitType,
     quip: turn.quip,
     softspot: turn.softspot,
+    judgeScore: turn.judgeScore,
     usedPreset: preset,
     silent: timeout,
   });
@@ -345,7 +461,7 @@ async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
   refs.log.append(bubbleAI(turn.reply));
   if (turn.fallback) refs.log.append(fallbackLine(turn.fallback));
   refs.log.append(quipLine(record));
-  updateAngerUI();
+  updateMeterUI();
   scrollLogToBottom();
   blip(turn.hitType === 'softspot' ? 'softspot' : turn.hitType === 'self_destruct' ? 'self_destruct' : 'reply');
 
@@ -364,6 +480,7 @@ async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
 
   state.busy = false;
   if (refs.sendBtn) refs.sendBtn.disabled = false;
+  refs.picker?.setDisabled(false);
   if (refs.input) {
     refs.input.disabled = false;
     refs.input.focus();
@@ -374,16 +491,17 @@ async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
   startTimer();
 }
 
-function updateAngerUI() {
+function updateMeterUI() {
   const { duel } = state;
-  const stage = stageOf(duel.anger);
-  if (refs.angerFill) refs.angerFill.style.width = `${duel.anger}%`;
-  if (refs.angerNum) refs.angerNum.textContent = String(duel.anger);
+  const stage = stageOf(duel.breakdown);
+  if (refs.meterFill) refs.meterFill.style.width = `${duel.breakdown}%`;
+  if (refs.meterNum) refs.meterNum.textContent = String(duel.breakdown);
   if (refs.stagePill) {
     refs.stagePill.textContent = stage.label;
     refs.stagePill.className = `stage-pill stage-${stage.id}`;
   }
-  if (refs.angerFill) refs.angerFill.style.background = stage.color;
+  // 颜色交给 CSS 变量 —— 换主题时破防值条要跟着变
+  if (refs.meterFill) refs.meterFill.style.background = `var(--stage-${stage.id})`;
 }
 
 async function finish(result) {
@@ -417,7 +535,7 @@ async function finish(result) {
 
 function startTimer() {
   stopTimer();
-  state.secondsLeft = ROUND_SECONDS;
+  state.secondsLeft = secondsOf(state.difficulty);
   paintTimer();
   state.timerId = setInterval(tick, 1000);
 }
@@ -436,7 +554,7 @@ function stopTimer() {
   state.timerId = null;
 }
 
-/** 打开设置弹窗时暂停倒计时 —— 保留 secondsLeft，别偷偷给玩家回满 30 秒。 */
+/** 打开设置弹窗时暂停倒计时 —— 保留 secondsLeft，别偷偷给玩家回满这一回合。 */
 function pauseTimer() {
   stopTimer();
 }
@@ -492,9 +610,13 @@ function viewReport() {
       { class: 'stats' },
       stat('对手', `${duel.persona.avatar} ${duel.persona.name}`),
       stat('回合数', `${duel.rounds.length} / ${MAX_ROUNDS}`),
+      stat(
+        '难度',
+        `${getDifficulty(state.difficulty).label}（${secondsOf(state.difficulty)}s）`,
+      ),
       stat('软肋命中', `${hits} / ${duel.persona.softspots.length}`),
       stat('自爆次数', `${duel.selfDestructs} / ${MAX_SELF_DESTRUCTS}`),
-      stat('最终怒气', `${duel.anger} / 100`),
+      stat('最终破防值', `${duel.breakdown} / 100`),
       stat('引擎', engineLabel()),
     ),
     h('h3', { class: 'section-title', text: '对线回放' }),
@@ -510,8 +632,10 @@ function viewReport() {
           h(
             'div',
             { class: `replay-tag tag-${round.hitType}` },
-            `${HIT_LABELS[round.hitType] || '回合'} ${round.delta > 0 ? '+' : ''}${round.delta}`,
+            `${HIT_LABELS[round.hitType] || '回合'} ${signed(round.delta)}`,
           ),
+          // 复盘屏就是把账摊开的地方：查表那 80% 和判断那 20% 各出了多少力
+          h('div', { class: 'replay-math', text: deltaMath(round) }),
         ),
       ),
     ),
@@ -544,6 +668,12 @@ function goSelect() {
 /* 战绩图导出                                                          */
 /* ------------------------------------------------------------------ */
 
+/** 读一个 CSS 变量的当前值（会跟着 data-theme 变）。canvas 里画图用得上。 */
+function cssVar(name) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || '#000000';
+}
+
 function exportCard() {
   const { duel } = state;
   if (!duel) return;
@@ -558,56 +688,68 @@ function exportCard() {
   const ctx = canvas.getContext('2d');
   ctx.scale(2, 2);
 
-  ctx.fillStyle = '#12100E';
+  // 直接从 CSS 变量取色，跟着当前主题走 —— 别在这儿再抄一份色值，加了主题就会对不上
+  const ink = {
+    bg: cssVar('--bg'),
+    panel: cssVar('--panel-2'),
+    text: cssVar('--text'),
+    muted: cssVar('--muted'),
+    accent: cssVar('--accent'),
+    danger: cssVar('--danger'),
+  };
+  const FONT = '"PingFang SC", "Microsoft YaHei", sans-serif';
+
+  ctx.fillStyle = ink.bg;
   ctx.fillRect(0, 0, W, H);
 
-  ctx.fillStyle = '#FF4D4D';
+  ctx.fillStyle = ink.danger;
   ctx.fillRect(0, 0, W, 8);
 
-  ctx.fillStyle = '#8A8078';
-  ctx.font = '20px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = ink.muted;
+  ctx.font = `20px ${FONT}`;
   ctx.fillText('杠精陪练房 · GANG.AI', 60, 90);
 
-  ctx.fillStyle = '#EDEDED';
-  ctx.font = 'bold 56px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = ink.text;
+  ctx.font = `bold 56px ${FONT}`;
   ctx.fillText(copy.headline, 60, 190);
 
-  ctx.fillStyle = '#8A8078';
-  ctx.font = '24px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = ink.muted;
+  ctx.font = `24px ${FONT}`;
   ctx.fillText(`对手：${duel.persona.name}`, 60, 240);
 
-  ctx.fillStyle = '#26221E';
+  ctx.fillStyle = ink.panel;
   ctx.fillRect(60, 290, W - 120, 190);
-  ctx.fillStyle = '#FFD24A';
-  ctx.font = 'bold 22px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = ink.accent;
+  ctx.font = `bold 22px ${FONT}`;
   ctx.fillText(title.rank, 90, 340);
-  ctx.fillStyle = '#EDEDED';
-  ctx.font = 'bold 40px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = ink.text;
+  ctx.font = `bold 40px ${FONT}`;
   ctx.fillText(title.name, 90, 395);
-  ctx.fillStyle = '#8A8078';
-  ctx.font = '20px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = ink.muted;
+  ctx.font = `20px ${FONT}`;
   wrapText(ctx, title.desc, 90, 435, W - 220, 28);
 
   const rows = [
     ['回合数', `${duel.rounds.length} / ${MAX_ROUNDS}`],
+    ['难度', `${getDifficulty(state.difficulty).label}（${secondsOf(state.difficulty)}s）`],
     ['软肋命中', `${uniqueSoftspotHits(duel)} / ${duel.persona.softspots.length}`],
     ['自爆次数', `${duel.selfDestructs} / ${MAX_SELF_DESTRUCTS}`],
-    ['最终怒气', `${duel.anger} / 100`],
+    ['最终破防值', `${duel.breakdown} / 100`],
   ];
   let y = 550;
-  ctx.font = '24px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.font = `24px ${FONT}`;
   for (const [label, value] of rows) {
-    ctx.fillStyle = '#8A8078';
+    ctx.fillStyle = ink.muted;
     ctx.fillText(label, 60, y);
-    ctx.fillStyle = '#EDEDED';
+    ctx.fillStyle = ink.text;
     ctx.fillText(value, 300, y);
     y += 52;
   }
 
-  ctx.fillStyle = '#8A8078';
-  ctx.font = '20px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
-  wrapText(ctx, '软肋这东西，人人都有一根。', 60, 880, W - 120, 30);
-  ctx.fillText(`引擎：${engineLabel()}`, 60, 950);
+  ctx.fillStyle = ink.muted;
+  ctx.font = `20px ${FONT}`;
+  wrapText(ctx, '软肋这东西，人人都有一根。', 60, 920, W - 120, 30);
+  ctx.fillText(`引擎：${engineLabel()}`, 60, 960);
 
   canvas.toBlob((blob) => {
     if (!blob) return;
@@ -662,6 +804,14 @@ function wireTopbar() {
 
   // 注意：这段必须在下面 sound-toggle 的早退之前，否则声音按钮缺失会连带跳过设置按钮
   document.getElementById('settings-btn')?.addEventListener('click', openSettingsDialog);
+
+  const themeBtn = document.getElementById('theme-btn');
+  initTheme(themeBtn);
+  themeBtn?.addEventListener('click', () => {
+    const theme = applyTheme(saveTheme(nextTheme(loadTheme())));
+    paintThemeButton(themeBtn, theme);
+    blip('reply');
+  });
 
   const toggle = document.getElementById('sound-toggle');
   if (!toggle) return;

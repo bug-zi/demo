@@ -5,6 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>杠精陪练房 · GANG.AI</title>
     <link rel="stylesheet" href="/src/styles.css" />
+    <!--
+      首屏防闪：main.js 是 module（defer），等它跑起来再挂 data-theme 的话，
+      选了亮色的人每次刷新都会先看到一帧暗色。这里在 CSS 生效前抢先把主题挂上。
+      key 与 src/lib/theme.js 的 STORAGE_KEY 必须一致，改一处记得改另一处。
+    -->
+    <script>
+      try {
+        var t = localStorage.getItem('gang-ai:theme:v1');
+        document.documentElement.dataset.theme = t === 'light' ? 'light' : 'dark';
+      } catch (e) {
+        document.documentElement.dataset.theme = 'dark';
+      }
+    </script>
   </head>
   <body>
     <div id="app">
@@ -14,6 +27,9 @@
         </div>
         <div class="topbar-right">
           <span id="engine-badge" class="badge">本地引擎</span>
+          <button id="theme-btn" class="ghost-btn" type="button" aria-label="切换配色主题">
+            ☀️
+          </button>
           <button id="settings-btn" class="ghost-btn" type="button" aria-label="接入你的 AI">
             ⚙️
           </button>
