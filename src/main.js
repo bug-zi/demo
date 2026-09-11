@@ -664,6 +664,9 @@ async function finish(result) {
 /* ------------------------------------------------------------------ */
 
 function startTimer() {
+  // 不限时的局压根不该有倒计时 —— 0 秒起跳的 interval 会在 1 秒后判超时，
+  // 把「等玩家说话」变成「（沉默）」回合连环自动开火
+  if (!state.duel || state.duel.roundSeconds <= 0) return;
   stopTimer();
   state.secondsLeft = state.duel.roundSeconds;
   // 新一回合从满秒重新走 —— 上一回合按过的暂停不带到这一回合
@@ -695,7 +698,8 @@ function pauseTimer() {
 function resumeTimer() {
   if (state.timerId) return;
   if (state.timerPaused) return; // 手动暂停优先：关设置弹窗的自动恢复不许把暂停偷走
-  if (state.screen !== 'duel' || !state.duel || state.duel.result) return;
+  // 不限时的局没倒计时可恢复 —— 这里也给它武装 interval 的话，关一次弹窗就冒（沉默）
+  if (state.screen !== 'duel' || !state.duel || state.duel.result || state.duel.roundSeconds <= 0) return;
   state.timerId = setInterval(tick, 1000);
 }
 

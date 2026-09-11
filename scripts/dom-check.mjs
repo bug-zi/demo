@@ -408,5 +408,32 @@ const badgeAfter = $('.module-card.primary .module-badge')?.textContent ?? '';
 if (badgeAfter !== badgeBefore) fail(`资料库往返后角标应不变，前「${badgeBefore}」后「${badgeAfter}」`);
 console.log('✓ 话术资料库：解锁进入/筛选/收藏/自建落盘/返回/角标不受影响');
 
+// 14. 不限时局回归：发完一言后原地干等不该弹（沉默），开关设置弹窗也不该
+//     （回归场景：startTimer/resumeTimer 没挡住 0 秒局，1 秒后幽灵超时把剩余回合级联烧成沉默）
+$('.module-card.primary').click(); // 续上 13 节留下的活局（那一发还在离场记账中）
+if (!$('.duel')) fail('续局应能回到对线屏');
+await new Promise((r) => setTimeout(r, 1200)); // 先等 13 节那发落账补画完（它开局点的我方气泡不重建，基线 me=0/ai=2）
+$$('.preset-chip')[1].click(); // 打出第 2 回合
+await new Promise((r) => setTimeout(r, 2600)); // 等回合生成完，再干等远超 1 秒 —— 幽灵计时器会在这窗口里开火
+const silenceBubbles = $$('.bubble-me').filter((b) => b.textContent === '（沉默）');
+if (silenceBubbles.length !== 0) {
+  fail(`不限时局干等不该冒出（沉默）回合，实际冒了 ${silenceBubbles.length} 个`);
+}
+if ($$('.bubble-me').length !== 1) fail(`干等后我方发言应只有 1 条（这里新发的），实际 ${$$('.bubble-me').length}`);
+if ($$('.bubble-ai').length !== 3) fail(`对方发言应为 3 条（开场白 + 2 回合），实际 ${$$('.bubble-ai').length}`);
+if ($('.round-label').textContent !== '第 3 / 8 轮') fail(`干等后轮次应停在第 3 轮，实际「${$('.round-label').textContent}」`);
+if ($('.input').disabled) fail('不限时局干等不该锁输入框 —— 应等玩家说话');
+// 开关一次设置弹窗：关弹窗触发的 onResume 也不许武装幽灵倒计时
+$('#settings-btn').click();
+if (!$('.modal')) fail('不限时局也应能打开设置弹窗');
+$('.modal-head .ghost-btn').click();
+await new Promise((r) => setTimeout(r, 1600));
+const silenceAfterDialog = $$('.bubble-me').filter((b) => b.textContent === '（沉默）');
+if (silenceAfterDialog.length !== 0) {
+  fail(`关设置弹窗后不该冒出（沉默）回合，实际冒了 ${silenceAfterDialog.length} 个`);
+}
+if ($$('.bubble-me').length !== 1) fail(`关弹窗后我方发言仍应 1 条，实际 ${$$('.bubble-me').length}`);
+console.log('✓ 不限时局：干等/关设置弹窗都不弹（沉默），轮次不推进，输入框可用');
+
 console.log('\n全部通过 ✅');
 process.exit(0);
