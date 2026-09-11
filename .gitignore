@@ -29,3 +29,5 @@ Thumbs.db
 .claude/
 .superpowers/
 CLAUDE.md
+# codegraph 本地索引
+.codegraph/

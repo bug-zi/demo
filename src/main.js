@@ -9,8 +9,9 @@
 
 import { PERSONAS, getPersona } from './data/personas.js';
 import { CATEGORIES, categoryOf } from './data/categories.js';
-import { HIT_LABELS, EQ_HIT_LABELS, SILENCE_TEXT } from './data/fallbacks.js';
+import { HIT_LABELS, EQ_HIT_LABELS, HIT_QUIPS, EQ_HIT_QUIPS, SILENCE_TEXT } from './data/fallbacks.js';
 import { pickTitle } from './data/titles.js';
+import { STICKERS, matchSticker, stickerById } from './data/stickers.js';
 import {
   MAX_ROUNDS,
   MAX_SELF_DESTRUCTS,
@@ -63,12 +64,23 @@ function scrollLogToBottom() {
   refs.log.scrollTop = refs.log.scrollHeight;
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** 重放一次性动效类：先摘掉再强制回流，连跨两档时动画也能重新跑起来。 */
+function replayFx(el, cls) {
+  if (!el) return;
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+}
+
 /* ------------------------------------------------------------------ */
 /* 渲染入口                                                            */
 /* ------------------------------------------------------------------ */
 
 function render() {
   stopTimer();
+  closeStickerPicker();
   for (const key of Object.keys(refs)) delete refs[key];
   screenEl.replaceChildren();
 
@@ -330,12 +342,17 @@ function viewDuel() {
   const persona = duel.persona;
   const stage = stageOf(duel.anger);
 
-  refs.log = h('div', { class: 'log' });
+  // data-stage 驱动对手气泡底色随阶段渐变（颜色归 CSS，这里只报阶段）
+  refs.log = h('div', { class: 'log', 'data-stage': stage.id });
   refs.log.append(bubbleAI(persona.opener));
 
   for (const round of duel.rounds) {
-    refs.log.append(bubbleMe(round.userText));
+    if (round.userText) refs.log.append(bubbleMe(round.userText));
+    const mine = round.stickerId ? stickerById(round.stickerId) : null;
+    if (mine) refs.log.append(stickerMe(mine));
     refs.log.append(bubbleAI(round.aiReply));
+    const theirs = round.aiStickerId ? stickerById(round.aiStickerId) : null;
+    if (theirs) refs.log.append(stickerAI(theirs));
     refs.log.append(quipLine(round));
   }
 
@@ -386,6 +403,18 @@ function viewDuel() {
   });
   refs.sendBtn = sendBtn;
 
+  // 贴纸按钮：点开弹层选贴纸，emoji 插进输入框 —— 单发/随文字发一个心智模型
+  const stickerBtn = h('button', {
+    class: 'sticker-btn',
+    type: 'button',
+    title: '表情包',
+    'aria-label': '表情包',
+    'aria-haspopup': 'true',
+    'aria-expanded': 'false',
+    onclick: (event) => toggleStickerPicker(event.currentTarget),
+  }, h('span', { class: 'icon i-add_reaction', 'aria-hidden': 'true' }));
+  refs.stickerBtn = stickerBtn;
+
   const presetRow = h(
     'div',
     { class: 'presets' },
@@ -417,7 +446,7 @@ function viewDuel() {
       h(
         'div',
         { class: 'duel-who' },
-        h('span', { class: 'avatar small' },
+        refs.headAvatar = h('span', { class: 'avatar small' },
           h('span', { class: `icon i-${persona.avatar}`, 'aria-hidden': 'true' }),
         ),
         h('div', {},
@@ -447,7 +476,12 @@ function viewDuel() {
       ),
     ),
     refs.log,
-    h('div', { class: 'composer' }, presetRow, h('div', { class: 'input-row' }, refs.input, sendBtn)),
+    h(
+      'div',
+      { class: 'composer' },
+      presetRow,
+      h('div', { class: 'input-row' }, stickerBtn, refs.input, sendBtn),
+    ),
   );
 
   requestAnimationFrame(() => {
@@ -467,6 +501,7 @@ function viewDuel() {
       startTimer();
     }
   }
+  refs.duelRoot = root;
   return root;
 }
 
@@ -486,6 +521,122 @@ function bubbleMe(text) {
   return h('div', { class: 'row row-me' }, h('div', { class: 'bubble bubble-me', text }));
 }
 
+/** 对手「正在输入…」占位行：回合生成期间 & 已读不回演出共用。 */
+function typingBubble() {
+  return h('div', { class: 'row row-ai' },
+    h('span', { class: 'avatar small' },
+      h('span', { class: `icon i-${state.duel.persona.avatar}`, 'aria-hidden': 'true' }),
+    ),
+    h('div', { class: 'bubble bubble-ai typing' }, h('i'), h('i'), h('i')),
+  );
+}
+
+/** 贴纸气泡：大号 emoji + 吐槽小字，全程 textContent，没有 innerHTML。 */
+function stickerBubble(sticker) {
+  return h(
+    'div',
+    { class: 'sticker-bubble' },
+    h('span', { class: 'sticker-emoji', text: sticker.emoji }),
+    h('span', { class: 'sticker-label', text: sticker.label }),
+  );
+}
+
+function stickerMe(sticker) {
+  return h('div', { class: 'sticker-row me' }, stickerBubble(sticker));
+}
+
+function stickerAI(sticker) {
+  return h(
+    'div',
+    { class: 'sticker-row ai' },
+    h('span', { class: 'avatar small' },
+      h('span', { class: `icon i-${state.duel.persona.avatar}`, 'aria-hidden': 'true' }),
+    ),
+    stickerBubble(sticker),
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* 贴纸弹层                                                            */
+/* ------------------------------------------------------------------ */
+
+// 一次只开一个弹层；AbortController 把「点外部关闭 / Esc 关闭」的监听一起带走
+let stickerPickerCtrl = null;
+
+function closeStickerPicker() {
+  if (!stickerPickerCtrl) return;
+  stickerPickerCtrl.abort();
+  stickerPickerCtrl.picker.remove();
+  if (refs.stickerBtn) refs.stickerBtn.setAttribute('aria-expanded', 'false');
+  stickerPickerCtrl = null;
+}
+
+function toggleStickerPicker(btn) {
+  if (stickerPickerCtrl) {
+    closeStickerPicker();
+    return;
+  }
+  if (state.busy || !state.duel || state.duel.result) return;
+
+  // 注意 realm：jsdom/浏览器各自的 addEventListener 只认自家 AbortSignal，
+  // 所以从 document.defaultView 拿构造器（真浏览器里就是 window.AbortController）
+  const { AbortController: LocalAbortController } = document.defaultView ?? globalThis;
+  const ctrl = new LocalAbortController();
+  const picker = h(
+    'div',
+    { class: 'sticker-picker', role: 'menu', 'aria-label': '选择表情包' },
+    ...STICKERS.map((s) =>
+      h(
+        'button',
+        {
+          class: 'sticker-cell',
+          type: 'button',
+          'data-id': s.id,
+          'aria-label': `${s.emoji} ${s.label}`,
+          onclick: () => {
+            insertSticker(s);
+            closeStickerPicker();
+          },
+        },
+        h('span', { class: 'sticker-emoji', text: s.emoji }),
+        h('span', { class: 'sticker-label', text: s.label }),
+      ),
+    ),
+  );
+
+  document.addEventListener(
+    'click',
+    (event) => {
+      if (picker.contains(event.target) || btn.contains(event.target)) return;
+      closeStickerPicker();
+    },
+    { capture: true, signal: ctrl.signal },
+  );
+  document.addEventListener(
+    'keydown',
+    (event) => {
+      if (event.key === 'Escape') closeStickerPicker();
+    },
+    { signal: ctrl.signal },
+  );
+
+  stickerPickerCtrl = ctrl;
+  ctrl.picker = picker;
+  btn.closest('.composer')?.appendChild(picker);
+  btn.setAttribute('aria-expanded', 'true');
+}
+
+/** 选中的贴纸以 emoji 字符插进输入框光标处（跟手打 emoji 同一条路，submit 时统一解析）。 */
+function insertSticker(sticker) {
+  const input = refs.input;
+  if (!input || input.disabled) return;
+  const at = input.selectionStart ?? input.value.length;
+  input.value = input.value.slice(0, at) + sticker.emoji + input.value.slice(input.selectionEnd ?? at);
+  const caret = at + sticker.emoji.length;
+  input.focus();
+  input.setSelectionRange(caret, caret);
+}
+
 /** 远程 AI 掉线时的提示：明说是本地台词，不然玩家分不清这局到底谁在说话。 */
 function fallbackLine(reason) {
   return h('div', { class: 'fallback-line' },
@@ -497,6 +648,7 @@ function fallbackLine(reason) {
 function quipLine(round) {
   const isEq = state.duel?.mode === 'extinguish';
   const labels = isEq ? EQ_HIT_LABELS : HIT_LABELS;
+  const quips = isEq ? EQ_HIT_QUIPS : HIT_QUIPS;
   const sign = round.delta > 0 ? '+' : '';
   const tagIcon =
     round.hitType === 'softspot'
@@ -504,11 +656,18 @@ function quipLine(round) {
       : round.hitType === 'self_destruct'
         ? h('span', { class: 'icon i-bolt', 'aria-hidden': 'true' })
         : null;
+  // 纯贴纸回合的 quip 是空文本分类（miss 档）带出来的 —— 换成斗图飘字
+  const quipText = round.hitType === 'sticker' ? quips.sticker : round.quip;
+  // 斗图回合的 delta 本来就是贴纸增量，不必再注一遍；只给「文字+贴纸」的叠加回合标注
+  const stickerNote =
+    round.stickerDelta && round.hitType !== 'sticker'
+      ? `（贴纸 ${round.stickerDelta > 0 ? '+' : ''}${round.stickerDelta}）`
+      : '';
   return h(
     'div',
     { class: `quip quip-${round.hitType}` },
     h('span', { class: 'quip-tag' }, tagIcon, labels[round.hitType] || '回合'),
-    h('span', { class: 'quip-text', text: `${round.quip || ''} ${sign}${round.delta}` }),
+    h('span', { class: 'quip-text', text: `${quipText || ''} ${sign}${round.delta}${stickerNote}` }),
   );
 }
 
@@ -519,44 +678,49 @@ function quipLine(round) {
 async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
   if (state.busy || !state.duel || state.duel.result) return;
 
-  const text = String(rawText || '').trim().slice(0, 100);
-  if (!text && !timeout) {
+  // 贴纸 = 注册过的 emoji 字符，随文字一起走输入框；这里剥出来单独结算
+  const { sticker, text: stripped } = matchSticker(rawText);
+  const text = stripped.trim().slice(0, 100);
+  if (!text && !sticker && !timeout) {
     refs.input?.focus();
     return;
   }
 
   state.busy = true;
   stopTimer();
+  closeStickerPicker();
 
-  const userText = text || SILENCE_TEXT;
+  const userText = text || (sticker ? '' : SILENCE_TEXT);
 
-  refs.log.append(bubbleMe(userText));
+  if (userText) refs.log.append(bubbleMe(userText));
+  if (sticker) refs.log.append(stickerMe(sticker));
   if (refs.input) refs.input.value = '';
   if (refs.sendBtn) refs.sendBtn.disabled = true;
+  if (refs.stickerBtn) refs.stickerBtn.disabled = true;
   if (refs.input) refs.input.disabled = true;
   scrollLogToBottom();
   blip('send');
 
-  const typing = h('div', { class: 'row row-ai' },
-    h('span', { class: 'avatar small' },
-      h('span', { class: `icon i-${state.duel.persona.avatar}`, 'aria-hidden': 'true' }),
-    ),
-    h('div', { class: 'bubble bubble-ai typing' }, h('i'), h('i'), h('i')),
-  );
+  const typing = typingBubble();
   refs.log.append(typing);
   scrollLogToBottom();
 
   let turn;
   try {
-    turn = await generateTurn({ persona: state.duel.persona, duel: state.duel, userText });
+    turn = await generateTurn({
+      persona: state.duel.persona,
+      duel: state.duel,
+      userText,
+      userSticker: sticker,
+    });
   } catch (err) {
     console.error('[嘴强王者] 生成失败：', err);
-    turn = { reply: '……', hitType: 'miss', quip: '', softspot: null };
+    turn = { reply: '……', hitType: 'miss', quip: '', softspot: null, sticker: null };
   }
 
   typing.remove();
 
-  const { record, result } = recordTurn(state.duel, {
+  const { record, result, before } = recordTurn(state.duel, {
     userText,
     aiReply: turn.reply,
     hitType: turn.hitType,
@@ -564,6 +728,8 @@ async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
     softspot: turn.softspot,
     usedPreset: preset,
     silent: timeout,
+    sticker,
+    aiSticker: turn.sticker,
   });
 
   // 玩家中途回了大厅：回合照常记账（上面已入 state.duel），界面等回来再补画
@@ -578,9 +744,15 @@ async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
   }
 
   refs.log.append(bubbleAI(turn.reply));
+  if (turn.sticker) refs.log.append(stickerAI(turn.sticker));
   if (turn.fallback) refs.log.append(fallbackLine(turn.fallback));
   refs.log.append(quipLine(record));
   updateAngerUI();
+  // 跨阶段的一回合（计划书 §4.3/§7.2）：报幕 + 闪红 + 抖头 + 弹胶囊。
+  // 出胜负时不算 —— 破防演出本身比阶段切换的戏份更足，别叠着吵
+  if (!result && record.stage !== stageOf(before).id) {
+    playStageFx(stageOf(state.duel.anger));
+  }
   scrollLogToBottom();
   blip(turn.hitType === 'softspot' ? 'softspot' : turn.hitType === 'self_destruct' ? 'self_destruct' : 'reply');
 
@@ -599,6 +771,7 @@ async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
 
   state.busy = false;
   if (refs.sendBtn) refs.sendBtn.disabled = false;
+  if (refs.stickerBtn) refs.stickerBtn.disabled = false;
   if (refs.input) {
     refs.input.disabled = false;
     refs.input.focus();
@@ -619,42 +792,167 @@ function updateAngerUI() {
     refs.stagePill.className = `stage-pill stage-${stage.id}`;
   }
   if (refs.angerFill) refs.angerFill.dataset.stage = stage.id;
+  if (refs.log) refs.log.dataset.stage = stage.id;
+}
+
+/**
+ * 阶段切换反馈（计划书 §4.3/§7.2）：怒气条闪红、对手头像抖一下、阶段胶囊弹一下，
+ * 日志里补一行报幕。报幕是文字通道 —— reduced-motion 把动画全豁免后，它仍可感知。
+ */
+function playStageFx(stage) {
+  if (!refs.log) return;
+  refs.log.append(
+    h('div', { class: `system-line stage-line stage-${stage.id}`, text: `—— TA 进入「${stage.label}期」 ——` }),
+  );
+  replayFx(refs.angerFill, 'flash');
+  replayFx(refs.headAvatar, 'shake');
+  replayFx(refs.stagePill, 'pop');
+  scrollLogToBottom();
+}
+
+/* ------------------------------------------------------------------ */
+/* 破防演出（计划书 §5.3）                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 胜利演出总入口。灭火局与人设没配 finale 时走通用降级（台词连播 + 安静退场），
+ * 所以「专属演出做不完」从来不是选项 —— 数据缺席即降级，永不空窗。
+ */
+async function playWinFinale() {
+  const { duel } = state;
+  const persona = duel.persona;
+  const isEq = duel.mode === 'extinguish';
+
+  if (isEq || !persona.finale) {
+    refs.log.append(
+      h('div', { class: 'system-line', text: isEq ? '—— TA 消气了 ——' : '—— 他绷不住了 ——' }),
+    );
+    for (const line of persona.breakdown) {
+      refs.log.append(bubbleAI(line));
+      scrollLogToBottom();
+      await sleep(420);
+      if (state.screen !== 'duel' || !refs.log) return;
+    }
+    refs.log.append(
+      h('div', { class: 'system-line exit', text: isEq ? '对话安静了下来' : '对方已退出群聊' }),
+    );
+    scrollLogToBottom();
+    return;
+  }
+
+  refs.log.append(h('div', { class: 'system-line', text: '—— 他绷不住了 ——' }));
+  await sleep(350);
+  if (state.screen !== 'duel' || !refs.log) return;
+  await playFinale(persona.finale);
+}
+
+/**
+ * 专属演出节拍器：台词在 personas.js（finale.lead/exitLine），编排在这里按 kind 走。
+ * 每一步之前都查「玩家还在不在对线屏」—— 演出中途回大厅不追着画。
+ */
+async function playFinale(finale) {
+  const alive = () => state.screen === 'duel' && refs.log;
+
+  if (finale.kind === 'rapid') {
+    // 杠精网友：连环短消息轰炸，一条比一条快
+    for (const line of finale.lead) {
+      const row = bubbleAI(line);
+      row.querySelector('.bubble')?.classList.add('burst');
+      refs.log.append(row);
+      scrollLogToBottom();
+      blip('reply');
+      await sleep(240);
+      if (!alive()) return;
+    }
+  } else if (finale.kind === 'recall') {
+    // 画饼老板：台词铺垫，甩下一句狠话，然后撤回
+    for (const line of finale.lead) {
+      refs.log.append(bubbleAI(line));
+      scrollLogToBottom();
+      await sleep(450);
+      if (!alive()) return;
+    }
+    const recalled = bubbleAI(finale.recallText);
+    refs.log.append(recalled);
+    scrollLogToBottom();
+    await sleep(950);
+    if (!alive()) return;
+    recalled.remove();
+  } else if (finale.kind === 'read-none') {
+    // 五彩斑斓甲方：说完最后一句，「正在输入…」亮了一会儿又灭了
+    for (const line of finale.lead) {
+      refs.log.append(bubbleAI(line));
+      scrollLogToBottom();
+      await sleep(500);
+      if (!alive()) return;
+    }
+    const typing = typingBubble();
+    refs.log.append(typing);
+    scrollLogToBottom();
+    await sleep(1100);
+    if (!alive()) return;
+    typing.remove();
+  } else {
+    // 亲戚（quit）/ 摊主（lights-off）：台词正常节奏连播
+    for (const line of finale.lead) {
+      refs.log.append(bubbleAI(line));
+      scrollLogToBottom();
+      await sleep(450);
+      if (!alive()) return;
+    }
+  }
+
+  // 退群：头像先灰下去，「对方已退出群聊」才落地
+  if (finale.kind === 'quit') refs.duelRoot?.classList.add('ai-gone');
+  refs.log.append(h('div', { class: 'system-line exit', text: finale.exitLine }));
+  scrollLogToBottom();
+
+  if (finale.kind === 'lights-off') {
+    // 收摊：话说完了，摊位的灯才熄 —— 报幕落在全亮时刻，灯暗是句号
+    await sleep(450);
+    if (!alive()) return;
+    refs.duelRoot?.classList.add('lights-off');
+    await sleep(1150);
+  } else {
+    await sleep(650);
+  }
+}
+
+/** 玩家败北演出：自己最后的气泡灰掉 +「你说不出话了」（计划书 §5.3）。 */
+async function playLoseFinale() {
+  if (state.duel.mode === 'extinguish') {
+    refs.log?.append(h('div', { class: 'system-line', text: '—— 这局没哄好 ——' }));
+    scrollLogToBottom();
+    return;
+  }
+  refs.log.append(h('div', { class: 'system-line', text: '—— 你先绷不住了 ——' }));
+  const mine = refs.log ? [...refs.log.querySelectorAll('.bubble-me')].pop() : null;
+  mine?.classList.add('muted-me');
+  scrollLogToBottom();
+  await sleep(750);
+  if (state.screen !== 'duel' || !refs.log) return;
+  refs.log.append(h('div', { class: 'system-line exit', text: '你说不出话了' }));
+  scrollLogToBottom();
 }
 
 async function finish(result) {
   const { duel } = state;
-  const isEq = duel.mode === 'extinguish';
   duel.result = result;
   stopTimer();
 
   if (result === 'win') {
     blip('breakdown');
-    if (isEq) {
-      refs.log.append(h('div', { class: 'system-line', text: '—— TA 消气了 ——' }));
-      for (const line of duel.persona.breakdown) {
-        refs.log.append(bubbleAI(line));
-      }
-      refs.log.append(h('div', { class: 'system-line', text: '对话安静了下来' }));
-    } else {
-      refs.log.append(h('div', { class: 'system-line', text: '—— 他绷不住了 ——' }));
-      for (const line of duel.persona.breakdown) {
-        refs.log.append(bubbleAI(line));
-      }
-      refs.log.append(h('div', { class: 'system-line', text: '对方已退出群聊' }));
-    }
+    await playWinFinale();
   } else if (result === 'lose') {
-    if (isEq) {
-      refs.log.append(h('div', { class: 'system-line', text: '—— 这局没哄好 ——' }));
-    } else {
-      refs.log.append(h('div', { class: 'system-line', text: '—— 你先绷不住了 ——' }));
-      refs.log.append(h('div', { class: 'system-line', text: '你被反杀了' }));
-    }
+    await playLoseFinale();
   } else {
-    refs.log.append(h('div', { class: 'system-line', text: '—— 八轮打完，谁也没破防 ——' }));
+    refs.log?.append(h('div', { class: 'system-line', text: '—— 八轮打完，谁也没破防 ——' }));
+    scrollLogToBottom();
   }
-  scrollLogToBottom();
 
-  await new Promise((r) => setTimeout(r, 1400));
+  await sleep(600);
+  // 演出中途回了大厅：胜负已记账，别把玩家硬拽进报告（同「离场落账」的哲学）
+  if (state.screen !== 'duel') return;
   state.screen = 'report';
   render();
 }
@@ -791,12 +1089,18 @@ function viewReport() {
     h(
       'ol',
       { class: 'replay' },
-      duel.rounds.map((round) =>
-        h(
+      duel.rounds.map((round) => {
+        const mine = round.stickerId ? stickerById(round.stickerId) : null;
+        const theirs = round.aiStickerId ? stickerById(round.aiStickerId) : null;
+        const replayTag = (s) => ` 【${s.emoji} ${s.label}】`;
+        return h(
           'li',
           { class: 'replay-item' },
-          h('div', { class: 'replay-me', text: `你：${round.userText}` }),
-          h('div', { class: 'replay-ai', text: `${duel.persona.name}：${round.aiReply}` }),
+          h('div', { class: 'replay-me', text: `你：${round.userText}${mine ? replayTag(mine) : ''}` }),
+          h('div', {
+            class: 'replay-ai',
+            text: `${duel.persona.name}：${round.aiReply}${theirs ? replayTag(theirs) : ''}`,
+          }),
           h(
             'div',
             { class: `replay-tag tag-${round.hitType}` },
@@ -807,8 +1111,8 @@ function viewReport() {
                 : null,
             `${labels[round.hitType] || '回合'} ${round.delta > 0 ? '+' : ''}${round.delta}`,
           ),
-        ),
-      ),
+        );
+      }),
     ),
     h(
       'div',

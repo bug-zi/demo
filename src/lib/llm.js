@@ -26,6 +26,7 @@ import {
   SELF_DESTRUCT_REACTIONS,
   pick,
 } from '../data/fallbacks.js';
+import { STICKERS, pickAiSticker, stickerById } from '../data/stickers.js';
 import { localHitType, matchSoftspot, stageOf } from './duel-engine.js';
 import { loadSettings } from './settings.js';
 
@@ -80,7 +81,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* 本地引擎                                                            */
 /* ------------------------------------------------------------------ */
 
-function localTurn({ persona, duel, userText }) {
+function localTurn({ persona, duel, userText, userSticker }) {
   const stage = stageOf(duel.anger);
   const hitType = localHitType(persona, userText);
   const spot = hitType === 'softspot' ? matchSoftspot(persona, userText) : null;
@@ -97,11 +98,15 @@ function localTurn({ persona, duel, userText }) {
     reply = pick(persona.stages[stage.id]) || pick(GENERIC_REPLIES);
   }
 
+  // 越上头越爱斗图；玩家先发贴纸时大概率回敬（见 stickers.js 的概率表）
+  const sticker = pickAiSticker(stage.id, Math.random(), { replyToSticker: Boolean(userSticker) });
+
   return {
     reply,
     hitType,
     softspot: spot,
     quip: HIT_QUIPS[hitType],
+    sticker,
     source: 'local',
   };
 }
@@ -121,6 +126,10 @@ const TURN_SCHEMA = {
       enum: HIT_TYPES,
       description: '玩家这句话对这个角色的效果',
     },
+    sticker: {
+      type: 'string',
+      description: '可选：随这句话一起发的一张表情包 id。多数时候省略；情绪激动或对方先斗图时适合回敬',
+    },
   },
   required: ['reply', 'hitType'],
   additionalProperties: false,
@@ -131,6 +140,7 @@ function buildSystemPrompt(persona, duel) {
   const spots = persona.softspots
     .map((s) => `- ${s.label}（比如说到：${s.keywords.slice(0, 3).join('、')}）`)
     .join('\n');
+  const stickerList = STICKERS.map((s) => `${s.id}（${s.emoji}${s.label}）`).join('、');
 
   return [
     `你在一款叫「嘴强王者」的游戏里扮演一个角色，正在和玩家对线。`,
@@ -156,25 +166,42 @@ function buildSystemPrompt(persona, duel) {
     `   - hit：说得有道理，你有点难接`,
     `   - miss：没什么力度，你可以轻松怼回去`,
     `   - self_destruct：玩家自己上头了（骂人、人身攻击、语无伦次），你反而占了上风`,
-    `5. 不要跳出角色。不要解释规则。不要提到自己是 AI。`,
-    `6. 只输出 JSON，形如 {"reply": "...", "hitType": "..."}，不要加任何别的字。`,
+    `5. 可以选发一张表情包（sticker 字段）：${stickerList}。多半不发；你越上头越可能发，对方先斗图时更应该回敬一张。`,
+    `6. 不要跳出角色。不要解释规则。不要提到自己是 AI。`,
+    `7. 只输出 JSON，形如 {"reply": "...", "hitType": "...", "sticker": "可选"}，不要加任何别的字。`,
   ].join('\n');
 }
 
-function buildMessages(duel, userText) {
+/** 贴纸在远程上下文里的文字形态：本地是图，给模型得翻译成话。 */
+function stickerHint(sticker) {
+  return `（玩家发了一张表情包：${sticker.emoji}「${sticker.label}」）`;
+}
+
+function buildMessages(duel, userText, userSticker) {
   const history = [];
   // 只带最近 6 回合，控制 token 也避免模型被早期的自己带跑偏
   for (const r of duel.rounds.slice(-6)) {
-    history.push({ role: 'user', content: r.userText });
+    const roundSticker = r.stickerId ? stickerById(r.stickerId) : null;
+    history.push({
+      role: 'user',
+      content: r.userText + (roundSticker ? stickerHint(roundSticker) : ''),
+    });
     // 助手的历史消息必须是 JSON。塞纯文本的话，模型看到自己前面在说大白话，
     // 就会跟着说大白话，把 system prompt 里那句「只输出 JSON」抛到脑后 ——
     // 上下文里的范例永远比指令有力。这里把它自己的历史也写成 JSON，示范给它看。
     history.push({
       role: 'assistant',
-      content: JSON.stringify({ reply: r.aiReply, hitType: r.hitType }),
+      content: JSON.stringify({
+        reply: r.aiReply,
+        hitType: r.hitType === 'sticker' ? 'miss' : r.hitType,
+        ...(r.aiStickerId ? { sticker: r.aiStickerId } : {}),
+      }),
     });
   }
-  history.push({ role: 'user', content: userText });
+  history.push({
+    role: 'user',
+    content: userText + (userSticker ? stickerHint(userSticker) : ''),
+  });
   return history;
 }
 
@@ -199,7 +226,7 @@ function extractJson(text) {
   }
 }
 
-/** 把各家的返回都收敛成同一个 turn 结构。 */
+/** 把各家的返回都收敛成同一个 turn 结构。贴纸 id 不合法就静默丢弃，不误伤正主回复。 */
 function toTurn(parsed, persona, userText) {
   const hitType = HIT_TYPES.includes(parsed?.hitType) ? parsed.hitType : 'miss';
   return {
@@ -207,6 +234,7 @@ function toTurn(parsed, persona, userText) {
     hitType,
     softspot: hitType === 'softspot' ? matchSoftspot(persona, userText) : null,
     quip: HIT_QUIPS[hitType],
+    sticker: stickerById(parsed?.sticker),
     source: 'remote',
   };
 }
@@ -230,7 +258,7 @@ async function anthropicTurn(config, { persona, duel, userText }) {
     // 台词本身很短，但开了 thinking 的话思考也算在这个额度里
     max_tokens: 2048,
     system: buildSystemPrompt(persona, duel),
-    messages: buildMessages(duel, userText),
+    messages: buildMessages(duel, userText, ctx.userSticker),
     thinking: { type: THINKING },
     output_config: {
       effort: 'low',
@@ -265,10 +293,10 @@ function openAiEndpoint(baseUrl) {
 // 跟答案共用这个额度：给 512 的话，历史一长思考就把额度吃光，content 直接空。
 const OPENAI_MAX_TOKENS = 4096;
 
-function openAiBody(config, { persona, duel, userText }, withJsonMode, reminder) {
+function openAiBody(config, { persona, duel, userText, userSticker }, withJsonMode, reminder) {
   const messages = [
     { role: 'system', content: buildSystemPrompt(persona, duel) },
-    ...buildMessages(duel, userText),
+    ...buildMessages(duel, userText, userSticker),
   ];
   // 最后一招：模型把「只输出 JSON」当耳旁风时，把要求再顶到它眼前
   if (reminder) {
@@ -428,12 +456,15 @@ function describeError(err) {
  * 降级时会带上 `fallback`（人话的失败原因），界面把它显示成一行小字 ——
  * 否则「这回合到底是 AI 说的还是模板说的」在游戏里根本看不出来。
  *
- * @returns {Promise<{reply:string, hitType:string, softspot:object|null, quip:string, source:string, fallback?:string}>}
+ * @param {{persona:object, duel:object, userText:string, userSticker?:object}} args
+ *   userSticker = 玩家这回合发的贴纸对象（斗图回敬与远程提示都用它）。
+ * @returns {Promise<{reply:string, hitType:string, softspot:object|null, quip:string, sticker:object|null, source:string, fallback?:string}>}
+ *   sticker = 对手回敬的贴纸（纯演出，怒气结算只认玩家侧）。
  */
-export async function generateTurn({ persona, duel, userText }) {
+export async function generateTurn({ persona, duel, userText, userSticker }) {
   const config = resolveConfig();
   if (config.provider !== 'local') {
-    const ctx = { persona, duel, userText };
+    const ctx = { persona, duel, userText, userSticker };
     try {
       const turn =
         config.provider === 'anthropic'
@@ -454,7 +485,7 @@ export async function generateTurn({ persona, duel, userText }) {
     }
   }
   await sleep(350 + Math.random() * 450);
-  return localTurn({ persona, duel, userText });
+  return localTurn({ persona, duel, userText, userSticker });
 }
 
 /**

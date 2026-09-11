@@ -33,6 +33,15 @@ export const ANGER_DELTA = {
   self_destruct: -12,
 };
 
+/**
+ * 贴纸增量的全局递减系数：本局第 1 张全额、第 2 张减半、第 3 张起归零。
+ * 按局计数不按图计数——对方看穿的是「斗图套路」，换图也拦不住。
+ * 这条线兜住「贴纸轮换流」：贴纸总贡献 ≤ 首张 + 半张 ≈ 12 点，
+ * 不找软肋光靠贴纸堆不满 100（8 × hit 12 + 12 = 108 里贴纸只占零头，
+ * 且不戳软肋时文字侧拿不到 hit 以上的增量）。
+ */
+const STICKER_FACTORS = [1, 0.5, 0];
+
 export const STAGES = [
   { id: 'polite', label: '礼貌', min: 0, max: 35 },
   { id: 'sarcastic', label: '阴阳', min: 35, max: 65 },
@@ -117,7 +126,8 @@ export function createDuel(persona, { roundSeconds = ROUND_SECONDS } = {}) {
     selfDestructs: 0,
     softspotKeys: [],
     usedPresets: 0,
-    freeTextRounds: 0, // 玩家自己打字（而不是点预设/沉默）的回合数
+    freeTextRounds: 0, // 玩家自己打字（而不是点预设/沉默/纯贴纸）的回合数
+    stickersSent: 0, // 玩家发过的贴纸张数（全局递减用，见 STICKER_FACTORS）
     result: null,
   };
 }
@@ -126,14 +136,20 @@ export function createDuel(persona, { roundSeconds = ROUND_SECONDS } = {}) {
  * 记录一个回合，返回这一回合的结算信息。
  *
  * @param {object} duel
- * @param {{userText:string, aiReply:string, hitType:string, quip:string, usedPreset?:boolean, softspot?:object}} turn
+ * @param {{userText:string, aiReply:string, hitType:string, quip:string, usedPreset?:boolean, softspot?:object,
+ *          sticker?:object, aiSticker?:object}} turn
+ *   sticker = 玩家这回合发的贴纸；aiSticker = 对手回敬的贴纸（纯演出，玩家没有怒气条）。
+ *   贴纸结算：纯贴纸（净文本为空）按 hitType 'sticker' 记；随文字发则叠加在文字分类上；
+ *   自爆回合贴纸不落地（都语无伦次了，表情包救不回来）。
  */
 export function recordTurn(duel, turn) {
   const before = duel.anger;
-  let delta = ANGER_DELTA[turn.hitType] ?? 0;
+  const stickerOnly = Boolean(turn.sticker) && !normalize(turn.userText);
+  const hitType = stickerOnly ? 'sticker' : turn.hitType;
+  let delta = ANGER_DELTA[hitType] ?? 0;
   let spot = null;
 
-  if (turn.hitType === 'softspot') {
+  if (hitType === 'softspot') {
     spot = turn.softspot || matchSoftspot(duel.persona, turn.userText);
     if (spot) {
       // 同一个软肋反复戳，效果递减——不然按着预设连点就赢了
@@ -145,24 +161,42 @@ export function recordTurn(duel, turn) {
     }
   }
 
+  // 贴纸层：增量走全局递减；发了就计数（自爆回合的贴纸也照样占张数）
+  let stickerDelta = 0;
+  if (turn.sticker) {
+    if (hitType !== 'self_destruct') {
+      const nth = Math.min(duel.stickersSent, STICKER_FACTORS.length - 1);
+      stickerDelta = Math.round(turn.sticker.delta * STICKER_FACTORS[nth]);
+    }
+    duel.stickersSent += 1;
+  }
+  if (stickerOnly) delta = 0; // 斗图回合不吃文字分类的底数
+  delta += stickerDelta;
+
   // 灭火局整体翻方向：戳心结/有效安抚降怒气，火上浇油反而反弹
-  if (duel.mode === 'extinguish') delta = -delta;
+  if (duel.mode === 'extinguish') {
+    delta = -delta;
+    stickerDelta = -stickerDelta;
+  }
 
   duel.anger = clamp(before + delta, 0, MAX_ANGER);
   if (turn.hitType === 'self_destruct') duel.selfDestructs += 1;
   if (turn.usedPreset) duel.usedPresets += 1;
-  if (!turn.usedPreset && !turn.silent) duel.freeTextRounds += 1;
+  if (!turn.usedPreset && !turn.silent && !stickerOnly) duel.freeTextRounds += 1;
 
   const record = {
     round: duel.rounds.length + 1,
     userText: turn.userText,
     aiReply: turn.aiReply,
-    hitType: turn.hitType,
+    hitType,
     quip: turn.quip,
     delta,
     angerAfter: duel.anger,
     stage: stageOf(duel.anger).id,
     softspotKey: spot ? spot.key : null,
+    stickerId: turn.sticker ? turn.sticker.id : null,
+    stickerDelta,
+    aiStickerId: turn.aiSticker ? turn.aiSticker.id : null,
   };
   duel.rounds.push(record);
 

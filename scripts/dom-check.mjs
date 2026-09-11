@@ -435,5 +435,150 @@ if (silenceAfterDialog.length !== 0) {
 if ($$('.bubble-me').length !== 1) fail(`关弹窗后我方发言仍应 1 条，实际 ${$$('.bubble-me').length}`);
 console.log('✓ 不限时局：干等/关设置弹窗都不弹（沉默），轮次不推进，输入框可用');
 
+// 15. 表情包：贴纸按钮/弹层/插入输入框、随文字发与纯贴纸回合、AI 回贴、战报回放
+//     （14 节结束时人还在对线屏，留下一局活局：亲戚、第 3 轮、怒气 60 —— 直接续用）
+if (!$('.duel')) fail('15 节前置：应仍在 14 节的对线屏');
+const stickerBtn = $('.sticker-btn');
+if (!stickerBtn) fail('输入行应有贴纸按钮');
+if (!stickerBtn.querySelector('.i-add_reaction')) fail('贴纸按钮应用 add_reaction 图标');
+stickerBtn.click();
+const picker = $('.sticker-picker');
+if (!picker) fail('点贴纸按钮应弹出贴纸选择层');
+const cells = $$('.sticker-cell');
+if (cells.length !== 12) fail(`贴纸弹层应有 12 格，实际 ${cells.length}`);
+if (!cells[0].textContent.includes('😤') || !cells[0].textContent.includes('就这？')) {
+  fail('贴纸格应含大 emoji 与吐槽小字');
+}
+cells[0].click();
+if ($('.sticker-picker')) fail('选中后弹层应关闭');
+if (!$('.input').value.includes('😤')) fail('点贴纸应把 emoji 插进输入框');
+// 点外部也能关
+stickerBtn.click();
+document.body.click();
+if ($('.sticker-picker')) fail('点外部应关闭贴纸弹层');
+document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' })); // 已关时再按 Esc 不报错
+
+// 15a. 文字+贴纸一起发：hit 12 + 首张贴纸 8 → 60+20=80，quip 带贴纸小注，AI 回贴
+const realRandom = Math.random;
+Math.random = () => 0; // 玩家先发贴纸 → AI 必回敬（replyToSticker 概率 0.5）
+$('.input').value = '但是您这话说的，可是过年那会儿您明明不是这么讲的' + $('.input').value;
+$('.input').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+await new Promise((r) => setTimeout(r, 2500));
+if (Number($('.anger-num').textContent) !== 80) fail(`hit+贴纸应变 80，实际 ${$('.anger-num').textContent}`);
+if (!$$('.bubble-me').some((b) => b.textContent.includes('可是过年那会儿'))) fail('文字气泡应照常渲染');
+const meStickers = $$('.sticker-row.me .sticker-bubble');
+if (meStickers.length !== 1 || !meStickers[0].textContent.includes('😤')) fail('应渲染我方贴纸气泡');
+if (!$$('.quip').pop().textContent.includes('贴纸')) fail('quip 行应带贴纸小注');
+if ($$('.sticker-row.ai .sticker-bubble').length !== 1) fail('AI 收到贴纸后应回敬一张');
+if ($('.input').value) fail('发送后输入框应清空');
+
+// 15b. 纯贴纸回合：hitType 斗图、第 2 张减半（+4）→ 84
+$('.sticker-btn').click();
+$$('.sticker-cell')[0].click(); // 又是 smug —— 换图也拦不住递减
+$('.input').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+await new Promise((r) => setTimeout(r, 2500));
+if (Number($('.anger-num').textContent) !== 84) fail(`第 2 张贴纸应 +4 到 84，实际 ${$('.anger-num').textContent}`);
+if ($$('.sticker-row.me .sticker-bubble').length !== 2) fail('纯贴纸回合也应有我方贴纸气泡');
+if (!$$('.quip').pop().textContent.includes('斗图')) fail('纯贴纸回合判定标签应为「斗图」');
+if (!$$('.quip').pop().textContent.includes('贴脸开大')) fail('纯贴纸回合飘字应用斗图文案（贴脸开大），而非 miss 档的「没接住」');
+Math.random = realRandom;
+
+// 15c. 剩最后一个预设收局（demo 软肋 +30 → 114 钳到 100 胜）→ 战报回放带贴纸
+$$('.preset-chip').filter((c) => !c.disabled)[0].click();
+await new Promise((r) => setTimeout(r, 4200));
+if (!$('.report')) fail('贴纸局应能正常打完进报告');
+const replayItems = $$('.replay-item');
+if (replayItems.length !== 5) fail(`本局应 5 个回合，实际 ${replayItems.length}`);
+const stickerReplay = replayItems.find((r) => r.textContent.includes('【😤'));
+if (!stickerReplay) fail('战报回放应把贴纸记成【emoji 文案】');
+const aiStickerReplay = replayItems.filter((r) => r.querySelector('.replay-ai').textContent.match(/【(🙄|😤)/));
+if (aiStickerReplay.length < 2) fail('AI 回敬的贴纸也应出现在回放里（应至少 2 条）');
+console.log('✓ 表情包：弹层/插入/文字+贴纸/纯贴纸递减/AI 回贴/战报回放');
+
+/* ------------------------------------------------------------------ */
+/* 16. A2 情绪演出：阶段切换反馈 + 专属破防演出 + 玩家败北演出            */
+/* ------------------------------------------------------------------ */
+
+// 16a. 阶段切换反馈：亲戚局第 1 轮停在礼貌不报幕；第 2 轮跨 35 → 报幕行 + 三个动效类 + log 阶段染色
+$$('.report-actions .btn').find((b) => b.textContent === '再来一局').click(); // 15 节的局是亲戚
+if (!$('.duel')) fail('16a 前置：再来一局应直接开亲戚新局');
+$$('.preset-chip')[0].click(); // kid(32)：0 → 32，仍礼貌
+await new Promise((r) => setTimeout(r, 1200));
+if ($$('.stage-line').length !== 0) fail('礼貌起步的第一轮不该有阶段报幕');
+$$('.preset-chip')[1].click(); // hongbao(28)：32 → 60，跨 35 进阴阳
+await new Promise((r) => setTimeout(r, 1200));
+const stageLines = $$('.stage-line');
+if (stageLines.length !== 1 || !/阴阳/.test(stageLines[0].textContent)) {
+  fail(`跨 35 应报幕一次「进入阴阳期」，实际 ${stageLines.length} 条：${stageLines.map((l) => l.textContent).join('/')}`);
+}
+if (!$('.anger-fill').classList.contains('flash')) fail('跨阶段回合应给怒气条挂 flash 动效');
+if (!$('.duel-head .avatar').classList.contains('shake')) fail('跨阶段回合应给对手头像挂 shake 动效');
+if (!$('.stage-pill').classList.contains('pop')) fail('跨阶段回合应给阶段胶囊挂 pop 动效');
+if ($('.log').dataset.stage !== 'sarcastic') fail(`log 应带 data-stage 驱动气泡变色，实际 ${$('.log').dataset.stage}`);
+console.log('✓ 阶段切换：报幕行/怒气条闪红/头像抖动/胶囊弹跳/log 阶段染色');
+
+// 16b. 亲戚专属破防演出（quit）：头像变灰 + 「对方已退出群聊」（演出后才跳报告，轮询捕抓）
+$$('.preset-chip')[2].click(); // demo(30)：60 → 90，上头
+await new Promise((r) => setTimeout(r, 1200));
+$('.input').value = '但是您当年不也是这么过来的吗？'; // hit(12)：90 → 100 破防
+$('.input').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+let sawGone = false;
+let sawExit = false;
+for (let i = 0; i < 100 && !$('.report'); i += 1) {
+  if ($('.duel.ai-gone')) sawGone = true;
+  if ($$('.system-line.exit').some((l) => l.textContent.includes('对方已退出群聊'))) sawExit = true;
+  await new Promise((r) => setTimeout(r, 50));
+}
+if (!sawGone) fail('亲戚局破防应播放退群演出（.duel.ai-gone）');
+if (!sawExit) fail('亲戚局收场文案应为「对方已退出群聊」');
+if (!$('.report')) fail('破防演出放完应进报告屏');
+console.log('✓ 亲戚破防演出：头像变灰 + 退出群聊');
+
+// 16c. 网友专属破防演出（rapid）：连发短消息 + 「对方已开启好友验证」
+$$('.report-actions .btn').find((b) => b.textContent === '换个对手').click();
+$$('.persona-card:not(.locked)')[0].click(); // 杠精网友
+for (const chip of $$('.preset-chip')) {
+  chip.click(); // 28 + 32 + 30 = 90
+  await new Promise((r) => setTimeout(r, 1200));
+}
+$('.input').value = '但是你这段论证可是前后矛盾啊'; // hit(12)：90 → 100 破防
+$('.input').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+let burstSeen = 0;
+let sawVerify = false;
+for (let i = 0; i < 100 && !$('.report'); i += 1) {
+  if (!sawVerify) {
+    const exit = $$('.system-line.exit').find((l) => l.textContent.includes('对方已开启好友验证'));
+    if (exit) {
+      sawVerify = true;
+      burstSeen = $$('.bubble-ai.burst').length;
+    }
+  }
+  await new Promise((r) => setTimeout(r, 50));
+}
+if (!sawVerify) fail('网友局收场文案应为「对方已开启好友验证」');
+if (burstSeen < 4) fail(`rapid 演出应连发至少 4 条短消息（.bubble-ai.burst），实际 ${burstSeen}`);
+if (!$('.report')) fail('rapid 演出放完应进报告屏');
+console.log(`✓ 网友破防演出：连发 ${burstSeen} 条 + 好友验证`);
+
+// 16d. 玩家败北演出：两次自爆 → 自己最后一条气泡变灰 + 「你说不出话了」
+$$('.report-actions .btn').find((b) => b.textContent === '换个对手').click();
+$$('.persona-card:not(.locked)')[1].click();
+$('.input').value = '你懂个屁'; // 自爆 1
+$('.input').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+await new Promise((r) => setTimeout(r, 1500));
+$('.input').value = '你就是个废物'; // 自爆 2 → lose
+$('.input').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+let sawMutedMe = false;
+let sawCantSpeak = false;
+for (let i = 0; i < 100 && !$('.report'); i += 1) {
+  if ($('.bubble-me.muted-me')) sawMutedMe = true;
+  if ($$('.system-line').some((l) => l.textContent.includes('你说不出话了'))) sawCantSpeak = true;
+  await new Promise((r) => setTimeout(r, 50));
+}
+if (!sawMutedMe) fail('败北时应把自己最后的气泡灰掉（.bubble-me.muted-me）');
+if (!sawCantSpeak) fail('败北文案应出现「你说不出话了」');
+if (!$('.report')) fail('败北演出放完应进报告屏');
+console.log('✓ 败北演出：自己气泡变灰 + 你说不出话了');
+
 console.log('\n全部通过 ✅');
 process.exit(0);
