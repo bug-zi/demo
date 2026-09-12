@@ -128,6 +128,7 @@ export function createDuel(persona, { roundSeconds = ROUND_SECONDS } = {}) {
     usedPresets: 0,
     freeTextRounds: 0, // 玩家自己打字（而不是点预设/沉默/纯贴纸）的回合数
     stickersSent: 0, // 玩家发过的贴纸张数（全局递减用，见 STICKER_FACTORS）
+    driftPaidRounds: 0, // 已结清漂移的既往回合数（drift 增量补付记账，见 recordTurn）
     result: null,
   };
 }
@@ -143,7 +144,6 @@ export function createDuel(persona, { roundSeconds = ROUND_SECONDS } = {}) {
  *   自爆回合贴纸不落地（都语无伦次了，表情包救不回来）。
  */
 export function recordTurn(duel, turn) {
-  const before = duel.anger;
   const stickerOnly = Boolean(turn.sticker) && !normalize(turn.userText);
   const hitType = stickerOnly ? 'sticker' : turn.hitType;
   let delta = ANGER_DELTA[hitType] ?? 0;
@@ -178,6 +178,30 @@ export function recordTurn(duel, turn) {
     delta = -delta;
     stickerDelta = -stickerDelta;
   }
+
+  // 环境漂移（3.0 阻力参数）：每完成一回合，对方按 drift 回一口气/又上头一档，
+  // 在本回合结算前补付尚未结过的漂移间隔——当回合的推送永远全额入账，
+  // 胜局不会被漂移吃掉。fire 漂向降温（降）、extinguish 漂向回怒（升）；
+  // 沉默/超时回合照常吃漂移（时间在流逝）。
+  const drift = Number(duel.persona.drift);
+  if (Number.isFinite(drift) && drift > 0) {
+    const unpaid = duel.rounds.length - (duel.driftPaidRounds ?? 0);
+    if (unpaid > 0) {
+      duel.anger =
+        duel.mode === 'extinguish'
+          ? Math.min(MAX_ANGER, duel.anger + drift * unpaid)
+          : Math.max(0, duel.anger - drift * unpaid);
+      duel.driftPaidRounds = duel.rounds.length;
+    }
+  }
+  const before = duel.anger;
+
+  // 输出折扣（3.0 阻力参数）：只折玩家主动输出（软肋/命中/贴纸，四舍五入），
+  // 自爆与沉默豁免。 extinguish 先翻方向再乘——幅度打折、方向不动。
+  const guardRaw = Number(duel.persona.guard);
+  const guard = hitType !== 'self_destruct' && Number.isFinite(guardRaw) ? guardRaw : 1;
+  delta = Math.round(delta * guard);
+  stickerDelta = Math.round(stickerDelta * guard);
 
   duel.anger = clamp(before + delta, 0, MAX_ANGER);
   if (turn.hitType === 'self_destruct') duel.selfDestructs += 1;

@@ -100,6 +100,35 @@ function wrapLines(ctx, text, maxWidth, maxLines) {
 }
 
 /**
+ * 人设立绘（A1）：圆形裁切画满头像圆并描边。加载失败返回 false，
+ * 调用方降级到图标重绘路径。
+ */
+function drawPortrait(ctx, src, cx, cy, radius) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.clip();
+      const s = Math.max((radius * 2) / img.width, (radius * 2) / img.height);
+      const w = img.width * s;
+      const h = img.height * s;
+      ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
+      ctx.restore();
+      ctx.strokeStyle = INK.edge;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      resolve(true);
+    };
+    img.onerror = () => resolve(false);
+    img.src = src;
+  });
+}
+
+/**
  * 把人设头像画成圆底图标：fetch 自托管 Material Symbols SVG、抽出 path 用 Path2D
  * 重绘（颜色可控）。图标坐标系以 SVG 自带 viewBox 为准（这套自托管图标是
  * `0 -960 960 960` 的 960 系，不是 24 系，按 24 硬算会放大 40 倍泼出圆外）。
@@ -175,11 +204,28 @@ function drawBubble(ctx, lines, { right = null, left = null, top, fill, edge, te
 }
 
 /**
+ * 装饰边框（A3）：整幅叠在成图最上层，中央镂空由图自身的透明区保证；
+ * 加载失败原样导出（Canvas 降级惯例）。
+ */
+function drawFrame(ctx, src, w, h) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(true);
+    };
+    img.onerror = () => resolve(false);
+    img.src = src;
+  });
+}
+
+/**
  * 导出战绩图：画完直接触发 PNG 下载（文件名「嘴强王者-称号名.png」）。
  * 头像 / 二维码任一失败都不阻断导出，各自走降级。toBlob 失败静默返回。
- * @param {{duel:object, copy:{headline:string, sub:string}, engine:string}} payload
+ * @param {{duel:object, copy:{headline:string, sub:string}, engine:string,
+ *          wornTitle?:string|null}} payload  wornTitle = 佩戴中称号名（M4 四处同步之一）
  */
-export async function exportDuelCard({ duel, copy, engine }) {
+export async function exportDuelCard({ duel, copy, engine, wornTitle }) {
   const title = pickTitle(duel);
   const quote = pickGoldenQuote(duel);
   const quoteTag = quoteTagFor(duel);
@@ -210,8 +256,9 @@ export async function exportDuelCard({ duel, copy, engine }) {
   ctx.font = font(22);
   ctx.fillText(copy.sub, 60, 194);
 
-  // 对手行：头像圆 + 名字
-  const avatarOk = await drawAvatar(ctx, duel.persona, 84, 240, 24);
+  // 对手行：头像圆 + 名字（A1 立绘优先，缺失/加载失败回退图标重绘，再回退首字圆）
+  const avatarOk = (duel.persona.portrait ? await drawPortrait(ctx, duel.persona.portrait, 84, 240, 24) : false)
+    || (await drawAvatar(ctx, duel.persona, 84, 240, 24));
   if (!avatarOk) drawAvatarFallback(ctx, duel.persona, 84, 240, 24);
   ctx.fillStyle = INK.text;
   ctx.font = font(26, true);
@@ -257,8 +304,13 @@ export async function exportDuelCard({ duel, copy, engine }) {
   ctx.font = font(18);
   wrapLines(ctx, title.desc, W - 220, 2).forEach((line, i) => ctx.fillText(line, 90, 636 + i * 24));
 
-  // 统计 2×2
+  // 统计 2×2（佩戴称号时在标题卡与统计区之间插一行）
   const hits = uniqueSoftspotHits(duel);
+  if (wornTitle) {
+    ctx.fillStyle = INK.amber;
+    ctx.font = font(18, true);
+    ctx.fillText(`称号 · ${wornTitle}`, 60, 692);
+  }
   const cells = [
     ['回合数', `${duel.rounds.length} / ${MAX_ROUNDS}`],
     [isEq ? '心结命中' : '软肋命中', `${hits} / ${duel.persona.softspots.length}`],
@@ -314,6 +366,14 @@ export async function exportDuelCard({ duel, copy, engine }) {
   ctx.fillStyle = INK.muted;
   ctx.font = font(15);
   ctx.fillText(`引擎：${engine}`, 60, 954);
+
+  // A3 装饰边框：胜局金框 / 负局靛蓝框，叠在最上层；图缺失时原样导出
+  const frameSrc = duel.result === 'win'
+    ? '/assets/art/frame/win.png'
+    : duel.result === 'lose' ? '/assets/art/frame/lose.png' : null;
+  if (frameSrc) {
+    await drawFrame(ctx, frameSrc, W, H);
+  }
 
   canvas.toBlob((blob) => {
     if (!blob) return;

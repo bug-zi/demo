@@ -5,10 +5,10 @@
  * 样式在 ./library.css，由 index.html 以 <link> 加载（不经 JS import：裸 Node 的检查脚本要能直接 import 本文件）。
  * 渲染铁律：全部经 h() 的 textContent，绝不拼 HTML。
  */
-import { h } from '../lib/dom.js';
+import { backBtn, h } from '../lib/dom.js';
 import { COMEBACKS, SCENES, TYPES, sceneName, typeName } from '../data/comebacks.js';
 
-export function createLibraryView({ getFavorites, getNotes, onToggleFavorite, onSaveNote, onDeleteNote, onBack }) {
+export function createLibraryView({ getFavorites, getNotes, onToggleFavorite, onSaveNote, onDeleteNote, onSceneViewed, onBack }) {
   /** 筛选轴：scene（'all' | 场景 id | 'mine'）/ type / onlyFav / query；form 为打开中的表单。 */
   const ui = { scene: 'all', type: 'all', onlyFav: false, query: '', form: null };
 
@@ -86,7 +86,13 @@ export function createLibraryView({ getFavorites, getNotes, onToggleFavorite, on
       type: 'button',
       'data-scene': id,
       text: name,
-      onclick: () => { ui.scene = id; paintChips(); paint(); },
+      onclick: () => {
+        ui.scene = id;
+        // 真实场景 id 才算「浏览过」（all/mine 是伪筛选项）；旧调用方不传回调即无感
+        if (onSceneViewed && id !== 'all' && id !== 'mine') onSceneViewed(id);
+        paintChips();
+        paint();
+      },
     });
   }
   function typeChip(id, name) {
@@ -183,7 +189,7 @@ export function createLibraryView({ getFavorites, getNotes, onToggleFavorite, on
   const root = h(
     'section',
     { class: 'library' },
-    h('button', { class: 'back-btn', type: 'button', text: '← 大厅', onclick: () => onBack() }),
+    backBtn('大厅', () => onBack()),
     h('div', { class: 'library-head' },
       h('h1', { class: 'hero-title', text: '话术资料库' }),
       h('p', { class: 'hero-sub', text: '先背两句，再上场。' }),

@@ -10,7 +10,7 @@
 import { PERSONAS, getPersona } from './data/personas.js';
 import { CATEGORIES, categoryOf } from './data/categories.js';
 import { HIT_LABELS, EQ_HIT_LABELS, HIT_QUIPS, EQ_HIT_QUIPS, SILENCE_TEXT } from './data/fallbacks.js';
-import { pickTitle } from './data/titles.js';
+import { pickTitle, titleById } from './data/titles.js';
 import { STICKERS, matchSticker, stickerById } from './data/stickers.js';
 import {
   MAX_ROUNDS,
@@ -22,14 +22,16 @@ import {
   uniqueSoftspotHits,
 } from './lib/duel-engine.js';
 import { loadRoundSeconds } from './lib/duel-options.js';
+import { ladderFor, levelIndexOf, isCleared, nextRecommended } from './lib/ladder.js';
 import { exportDuelCard } from './lib/share-card.js';
 import { engineLabel, generateTurn, isRemote } from './lib/llm.js';
 import { blip, isSoundEnabled, setSoundEnabled } from './lib/audio.js';
-import { h } from './lib/dom.js';
+import { backBtn, h } from './lib/dom.js';
 import { openSettings } from './ui/settings-dialog.js';
 import { toggleSkinPopover } from './ui/skin-popover.js';
 import { createLibraryView } from './ui/library.js';
 import { createArenaView } from './ui/arena.js';
+import { createWallView } from './ui/wall.js';
 import {
   loadFavorites,
   loadNotes,
@@ -40,6 +42,22 @@ import {
   deleteNote,
 } from './lib/notes.js';
 import { initTheme, initSkin, toggleTheme, onTheme } from './lib/theme.js';
+import { ACHIEVEMENTS } from './data/achievements.js';
+import {
+  ECONOMY,
+  applyAchievements,
+  buildCtx,
+  buyHeart,
+  canBattle,
+  equipTitle,
+  evaluateAchievements,
+  grantArena,
+  grantBattle,
+  heartsRegenEta,
+  loadProfile,
+  saveProfile,
+  tickHearts,
+} from './lib/profile.js';
 
 const screenEl = document.getElementById('screen');
 
@@ -52,6 +70,8 @@ const state = {
   timerPaused: false, // 手动暂停：跨大厅往返保持，发完一言进下一轮自动解除
   favorites: loadFavorites(),
   notes: loadNotes(),
+  profile: loadProfile(), // 成长档案（3.0）：内存为单一事实，改动后 saveProfile 落盘
+  etaTimerId: null, // 心池条恢复倒计时（render 时清掉）
 };
 
 /** 当前屏幕里需要原地更新的节点。 */
@@ -64,6 +84,103 @@ function disposeArena() {
   if (!arenaView) return;
   arenaView.dispose();
   arenaView = null;
+}
+
+/* ------------------------------------------------------------------ */
+/* 成长档案（3.0）                                                      */
+/* ------------------------------------------------------------------ */
+
+function stopEtaTimer() {
+  if (state.etaTimerId) clearInterval(state.etaTimerId);
+  state.etaTimerId = null;
+}
+
+/** 心池自然恢复的读时结算：有变化才落盘。 */
+function syncHearts() {
+  const before = state.profile.hearts;
+  tickHearts(state.profile);
+  if (state.profile.hearts !== before) saveProfile(state.profile);
+}
+
+/** 轻量 toast：M4 起复用为成就解锁通道。 */
+let toastTimerId = null;
+function toast(text) {
+  document.querySelector('.app-toast')?.remove();
+  if (toastTimerId) clearTimeout(toastTimerId);
+  const el = h('div', { class: 'app-toast', text });
+  document.body.append(el);
+  toastTimerId = setTimeout(() => {
+    el.remove();
+    toastTimerId = null;
+  }, 2200);
+}
+
+/**
+ * 终局一次性入账：grantBattle 以 duelId 幂等，duel.settlement 挂账防重算，
+ * 战报反复渲染/回大厅往返都读同一份。
+ */
+function settleDuel() {
+  const { duel } = state;
+  if (!duel?.result || duel.settlement) return;
+  const p = state.profile;
+  const before = { xp: p.xp, level: p.level, coins: p.coins, hearts: p.hearts };
+  // 复刷判定要在入账前做——通关账写进去之后 isCleared 就恒真了
+  const isReplay = duel.ladder ? isCleared(p, duel.ladder.roomId, duel.ladder.levelIndex) : false;
+  // 赛后称号自动入册（去重）。必须在 grantBattle 扫描之前——称号数成就才在同一场结算里生效
+  const wonTitle = pickTitle(duel);
+  if (wonTitle && !p.titlesOwned.includes(wonTitle.id)) p.titlesOwned.push(wonTitle.id);
+  const settlement = grantBattle(p, {
+    duelId: duel.id,
+    outcome: duel.result,
+    difficulty: duel.persona.difficulty,
+    mode: duel.mode,
+    personaId: duel.personaId,
+    ts: Date.now(),
+    stickerIds: duel.rounds.map((r) => r.stickerId).filter(Boolean),
+    softspotHitKinds: duel.rounds.map((r) => r.softspotKey).filter(Boolean),
+    roomId: duel.ladder?.roomId,
+    levelIndex: duel.ladder?.levelIndex,
+    isReplay,
+  });
+  duel.settlement = {
+    before,
+    ...settlement,
+    after: { xp: p.xp, level: p.level, coins: p.coins, hearts: p.hearts },
+  };
+  saveProfile(p);
+}
+
+/* ------------------------------------------------------------------ */
+/* 成就 toast 通道：右下角堆叠，3s 自消。对局成就走战报结算区展示，      */
+/* 只有场外触发的（进墙扫描 / 资料库浏览 / 擂台终盘）进队列，不重复弹。    */
+/* ------------------------------------------------------------------ */
+
+let achievementToastTimers = [];
+
+/** 场外成就扫描：解锁即入账落盘，并立刻弹出 toast。 */
+function scanAchievements() {
+  const p = state.profile;
+  const defs = applyAchievements(p, evaluateAchievements(p, buildCtx()));
+  if (defs.length) saveProfile(p);
+  if (defs.length) flushAchievementToasts(defs);
+  return defs;
+}
+
+function flushAchievementToasts(defs) {
+  if (!defs?.length) return;
+  let holder = document.querySelector('.ach-toast-holder');
+  if (!holder) {
+    holder = h('div', { class: 'ach-toast-holder' });
+    document.body.append(holder);
+  }
+  for (const def of defs) {
+    const el = h('div', { class: 'ach-toast', text: `成就解锁 · ${def.name} · +${def.coins ?? 0} 金币` });
+    holder.append(el);
+    achievementToastTimers.push(setTimeout(() => {
+      el.remove();
+      if (!holder.children.length) holder.remove();
+    }, 3000));
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -91,6 +208,7 @@ function replayFx(el, cls) {
 
 function render() {
   stopTimer();
+  stopEtaTimer();
   closeStickerPicker();
   disposeArena();
   for (const key of Object.keys(refs)) delete refs[key];
@@ -101,8 +219,19 @@ function render() {
   else if (state.screen === 'duel') screenEl.append(viewDuel());
   else if (state.screen === 'report') screenEl.append(viewReport());
   else if (state.screen === 'library') screenEl.append(libraryView());
+  else if (state.screen === 'wall') screenEl.append(wallView());
   else if (state.screen === 'arena') {
-    arenaView = createArenaView({ onBack: goLobby, openSettings: openSettingsDialog });
+    arenaView = createArenaView({
+      onBack: goLobby,
+      openSettings: openSettingsDialog,
+      onArenaEnd: ({ win, bestRound, recap }) => {
+        const defs = grantArena(state.profile, { win, bestRound, recap });
+        if (defs.length) {
+          saveProfile(state.profile);
+          flushAchievementToasts(defs);
+        }
+      },
+    });
     screenEl.append(arenaView.root);
   }
 }
@@ -116,12 +245,14 @@ function viewLobby() {
   return h(
     'section',
     { class: 'lobby' },
+    screenBg('lobby'),
     h(
       'div',
       { class: 'lobby-head' },
       h('h1', { class: 'hero-title', text: '今天想跟谁练练？' }),
       h('p', { class: 'hero-sub', text: '对线房三间都已亮灯，先从最热闹那间开始。' }),
     ),
+    profileStrip(),
     h(
       'div',
       { class: 'lobby-grid' },
@@ -182,6 +313,53 @@ function viewLobby() {
   );
 }
 
+/** 大厅名片卡：等级/佩戴称号/金币/生命/成就进度；点击进成就墙。 */
+function profileStrip() {
+  syncHearts();
+  const p = state.profile;
+  const worn = p.equippedTitle ? titleById(p.equippedTitle) : null;
+  return h(
+    'button',
+    { class: 'profile-strip', type: 'button', onclick: enterWall },
+    h('span', { class: 'profile-lv', text: `Lv.${p.level}` }),
+    worn ? h('span', { class: 'profile-title', text: worn.name }) : null,
+    h('span', { class: 'profile-stat', text: `金币 ${p.coins}` }),
+    h(
+      'span',
+      { class: 'profile-stat' },
+      h('span', { class: 'icon i-favorite', 'aria-hidden': 'true' }),
+      ` 生命 ${p.hearts}/${ECONOMY.HEARTS_MAX}`,
+    ),
+    h('span', {
+      class: 'profile-stat',
+      text: `成就 ${Object.keys(p.achievements).length}/${ACHIEVEMENTS.length}`,
+    }),
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* 成就墙                                                              */
+/* ------------------------------------------------------------------ */
+
+/** 进墙前先扫一遍成就：收藏/笔记/称号数这类场外条件在打开墙的瞬间结算。 */
+function enterWall() {
+  scanAchievements();
+  state.screen = 'wall';
+  render();
+}
+
+/** 成就墙视图：档案在 state，佩戴落盘在回调里做完，视图自管重绘。 */
+function wallView() {
+  const view = createWallView({
+    getProfile: () => state.profile,
+    onEquipTitle: (titleId) => {
+      if (equipTitle(state.profile, titleId)) saveProfile(state.profile);
+    },
+    onBack: goLobby,
+  });
+  return view.root; // 视图对象含 dispose（墙无定时器，空实现），render 只需要节点
+}
+
 /** 擂台入口：离场即弃局的派对局，不挂「进行中」角标、不进 state。 */
 function enterArena() {
   state.screen = 'arena';
@@ -201,6 +379,12 @@ function enterDuelModule() {
 
 function goLobby() {
   state.screen = 'lobby';
+  render();
+}
+
+/** 对局中途退出只回对线房（与进入路径对称）：活局留在 state，恢复条负责续。 */
+function exitToSelect() {
+  state.screen = 'select';
   render();
 }
 
@@ -230,6 +414,12 @@ function libraryView() {
       state.notes = deleteNote(state.notes, id);
       saveNotes(state.notes);
     },
+    onSceneViewed: (sceneId) => {
+      const seen = state.profile.stats.scenesViewed;
+      if (!seen.includes(sceneId)) seen.push(sceneId);
+      saveProfile(state.profile);
+      scanAchievements();
+    },
     onBack: goLobby,
   });
 }
@@ -242,7 +432,8 @@ function viewSelect() {
   return h(
     'section',
     { class: 'select' },
-    h('button', { class: 'back-btn', type: 'button', text: '← 大厅', onclick: goLobby }),
+    backBtn('大厅', goLobby),
+    resumeStrip(),
     h(
       'div',
       { class: 'select-head' },
@@ -252,6 +443,7 @@ function viewSelect() {
         text: '点火房把 TA 说到破防；灭火房把 TA 哄到消气。',
       }),
     ),
+    heartsBar(),
     ...CATEGORIES.map(categoryGroup),
     h('p', {
       class: 'footnote',
@@ -261,10 +453,90 @@ function viewSelect() {
   );
 }
 
-/** 选人屏的一间房：组头（房名 + 模式提示）+ 组内人设卡；空的可玩分组不渲染。 */
+/** 选人屏活局恢复条：中途退到对线房后的一键续局入口；无活局不渲染。 */
+function resumeStrip() {
+  const duel = state.duel;
+  if (!duel || duel.result) return null;
+  return h(
+    'div',
+    { class: 'resume-strip' },
+    personaAvatarEl(duel.persona, { small: true }),
+    h(
+      'div',
+      { class: 'resume-info' },
+      h('span', { class: 'resume-name', text: duel.persona.name }),
+      h('span', { class: 'resume-meta', text: `第 ${currentRound(duel)} 轮 · 进行中` }),
+    ),
+    h('button', { class: 'resume-go', type: 'button', text: '回到对局', onclick: enterDuelModule }),
+  );
+}
+
+/** 选人屏心池条：5 颗心 + 恢复倒计时 + 补心；演示模式整条换成徽章。 */
+function heartsBar() {
+  syncHearts();
+  const p = state.profile;
+  if (p.demoMode) {
+    return h('div', { class: 'hearts-bar demo' },
+      h('span', { class: 'demo-badge', text: '演示模式 · 无限生命' }));
+  }
+  const etaText = () => {
+    const left = heartsRegenEta(p);
+    const m = String(Math.floor(left / 60000)).padStart(2, '0');
+    const s = String(Math.floor((left % 60000) / 1000)).padStart(2, '0');
+    return `${m}:${s} 回一颗`;
+  };
+  refs.heartsEta = h('span', {
+    class: 'hearts-eta',
+    text: p.hearts >= ECONOMY.HEARTS_MAX ? '心池满员' : etaText(),
+  });
+  const buyBtn = h('button', {
+    class: 'hearts-buy',
+    type: 'button',
+    text: `${ECONOMY.HEART_PRICE} 币补一颗`,
+    disabled: p.coins < ECONOMY.HEART_PRICE || p.hearts >= ECONOMY.HEARTS_MAX,
+    onclick: () => {
+      if (buyHeart(state.profile) === 'ok') {
+        saveProfile(state.profile);
+        render();
+      }
+    },
+  });
+  if (p.hearts < ECONOMY.HEARTS_MAX) {
+    stopEtaTimer();
+    state.etaTimerId = setInterval(() => {
+      if (state.screen !== 'select' || !refs.heartsEta) {
+        stopEtaTimer();
+        return;
+      }
+      if (heartsRegenEta(state.profile) <= 0) {
+        syncHearts();
+        render();
+        return;
+      }
+      refs.heartsEta.textContent = etaText();
+    }, 1000);
+  }
+  return h(
+    'div',
+    { class: 'hearts-bar' },
+    h(
+      'span',
+      { class: 'hearts-icons' },
+      ...Array.from({ length: ECONOMY.HEARTS_MAX }, (_, i) =>
+        h('span', { class: `icon i-favorite heart${i < p.hearts ? '' : ' dim'}`, 'aria-hidden': 'true' })),
+    ),
+    refs.heartsEta,
+    buyBtn,
+    !canBattle(p)
+      ? h('span', { class: 'hearts-guide', text: '心见了：等恢复、补心，或去设置开演示模式' })
+      : null,
+  );
+}
+
+/** 选人屏的一间房：组头（房名 + 模式提示）+ 房内关卡梯；空的可玩分组不渲染。 */
 function categoryGroup(category) {
-  const members = PERSONAS.filter((p) => categoryOf(p).id === category.id);
-  if (!category.locked && members.length === 0) return null;
+  const ladder = ladderFor(category.id);
+  if (!category.locked && ladder.length === 0) return null;
   return h(
     'div',
     { class: 'category-group' },
@@ -274,10 +546,20 @@ function categoryGroup(category) {
       h('span', { class: 'category-name', text: category.name }),
       h('span', { class: 'category-hint', text: category.hint }),
     ),
-    category.locked && members.length === 0
+    category.locked && ladder.length === 0
       ? lockedPersonaCard()
-      : h('div', { class: 'persona-grid' }, members.map(personaCard)),
+      : h('div', { class: 'persona-grid' }, ladder.map((persona, i) => personaCard(persona, levelStateOf(category.id, i)))),
   );
+}
+
+/** 关卡状态派生：推荐（本房第一个未通关的关）/ 已通关（可复刷）。全开放，无锁定态。 */
+function levelStateOf(roomId, index) {
+  const cleared = isCleared(state.profile, roomId, index);
+  return {
+    index,
+    cleared,
+    current: !cleared && index === nextRecommended(state.profile, roomId),
+  };
 }
 
 /** 未开放分组的占位卡：可看不可点，不做死链（同大厅锁定卡精神）。 */
@@ -310,34 +592,49 @@ function connectHint() {
   );
 }
 
-function personaCard(persona) {
+function starsRow(difficulty) {
+  return h('div', { class: 'persona-stars', 'aria-label': `难度 ${difficulty}/5` },
+    ...Array.from({ length: difficulty }, () =>
+      h('span', { class: 'icon i-star', 'aria-hidden': 'true' })),
+    ...Array.from({ length: 5 - difficulty }, () =>
+      h('span', { class: 'icon i-star star-dim', 'aria-hidden': 'true' })),
+  );
+}
+
+/**
+ * 选人屏关卡卡：房内梯上的每一关（全开放）。
+ * 推荐关（本房第一个未通关）高亮；已通关带复刷标识（复刷奖励按首通 30%）。
+ */
+function personaCard(persona, level = {}) {
+  const ready = canBattle(state.profile);
+  const cls = ['persona-card'];
+  if (level.cleared) cls.push('cleared');
+  if (level.current) cls.push('current');
+  if (!ready) cls.push('no-hearts');
   return h(
     'button',
     {
-      class: 'persona-card',
+      class: cls.join(' '),
       type: 'button',
+      disabled: !ready,
+      title: !ready ? '心见了，先补心或开演示模式' : undefined,
       onclick: () => startDuel(persona.id),
     },
     h(
       'div',
       { class: 'persona-top' },
-      h('span', { class: 'avatar' },
-        h('span', { class: `icon i-${persona.avatar}`, 'aria-hidden': 'true' }),
-      ),
+      personaAvatarEl(persona),
       h(
         'div',
         { class: 'persona-id' },
         h('div', { class: 'persona-name', text: persona.name }),
-        h('div', { class: 'persona-stars', 'aria-label': `难度 ${persona.difficulty}/5` },
-          ...Array.from({ length: persona.difficulty }, () =>
-            h('span', { class: 'icon i-star', 'aria-hidden': 'true' })),
-          ...Array.from({ length: 5 - persona.difficulty }, () =>
-            h('span', { class: 'icon i-star star-dim', 'aria-hidden': 'true' })),
-        ),
+        starsRow(persona.difficulty),
       ),
     ),
     h('p', { class: 'persona-tagline', text: `「${persona.tagline}」` }),
     h('p', { class: 'persona-intro', text: persona.intro }),
+    level.current ? h('span', { class: 'level-badge', text: '推荐' }) : null,
+    level.cleared ? h('span', { class: 'level-badge replay', text: '复刷 · 奖励30%' }) : null,
   );
 }
 
@@ -345,11 +642,60 @@ function personaCard(persona) {
 /* 对线屏                                                              */
 /* ------------------------------------------------------------------ */
 
+/** A2 场景背景小样：屏根插入背景层（叠在皮肤背景之上），图缺失时只是不显示。 */
+const ROOM_BG = {
+  lobby: '/assets/art/bg/lobby.jpg',
+  gang: '/assets/art/bg/gang.jpg',
+  deal: '/assets/art/bg/deal.jpg',
+  eq: '/assets/art/bg/eq.jpg',
+};
+
+function screenBg(roomId) {
+  const url = ROOM_BG[roomId];
+  if (!url) return null;
+  return h('div', { class: 'screen-bg', 'aria-hidden': 'true', style: `background-image:url('${url}')` });
+}
+
+/** A3 破防时刻插画小样：点火胜局战报展示，加载完成前不占位，缺失自动摘除。 */
+function spotlightEl() {
+  return h('img', {
+    class: 'spotlight',
+    src: '/assets/art/spotlight/breakdown.jpg',
+    alt: '',
+    onload: (e) => e.target.classList.add('ok'),
+    onerror: (e) => e.target.remove(),
+  });
+}
+
+/** 头像统一出口：配了立绘（portrait）的照片填满圆底，没配的退回 Material 线性图标。 */
+function personaAvatarEl(persona, opts = {}) {
+  const cls = ['avatar'];
+  if (opts.small) cls.push('small');
+  if (opts.inline) cls.push('inline');
+  return h('span', { class: cls.join(' ') },
+    persona.portrait
+        ? h('img', {
+            class: 'avatar-img',
+            src: persona.portrait,
+            alt: '',
+            onerror: (e) => e.target.replaceWith(
+              h('span', { class: `icon i-${persona.avatar}`, 'aria-hidden': 'true' }),
+            ),
+          })
+        : h('span', { class: `icon i-${persona.avatar}`, 'aria-hidden': 'true' }),
+  );
+}
+
 function startDuel(personaId) {
   const persona = getPersona(personaId);
-  if (!persona) return;
+  if (!persona || !canBattle(state.profile)) return;
   // 时限在开局时定格：设置改动只影响下一局，进行中的局不中途变卦
   state.duel = createDuel(persona, { roundSeconds: loadRoundSeconds() });
+  // 闯关梯坐标（引擎透明携带）：终局按它写通关账、判复刷
+  const roomId = categoryOf(persona).id;
+  state.duel.ladder = { roomId, levelIndex: levelIndexOf(roomId, persona.id) };
+  // 成长结算的幂等键：终局入账认这个 id
+  state.duel.id = `d-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   state.busy = false;
   state.secondsLeft = state.duel.roundSeconds;
   state.timerPaused = false;
@@ -459,22 +805,25 @@ function viewDuel() {
   const root = h(
     'section',
     { class: 'duel' },
+    screenBg(persona.category),
     h(
       'div',
       { class: 'duel-head' },
-      h('button', { class: 'back-btn duel-exit', type: 'button', text: '← 大厅', onclick: goLobby }),
+      backBtn('对线房', exitToSelect, 'duel-exit'),
       h(
         'div',
         { class: 'duel-who' },
-        refs.headAvatar = h('span', { class: 'avatar small' },
-          h('span', { class: `icon i-${persona.avatar}`, 'aria-hidden': 'true' }),
-        ),
+        refs.headAvatar = personaAvatarEl(persona, { small: true }),
         h('div', {},
           h('div', { class: 'persona-name', text: persona.name }),
           h('div', { class: 'persona-tagline small', text: `「${persona.tagline}」` }),
         ),
       ),
-      h('div', { class: 'duel-meta' }, refs.roundLabel, refs.timerLabel, refs.pauseBtn),
+      h('div', { class: 'duel-meta' },
+        equippedTitleTag(),
+        refs.roundLabel,
+        refs.timerLabel,
+        refs.pauseBtn),
     ),
     h(
       'div',
@@ -530,9 +879,7 @@ function bubbleAI(text) {
   return h(
     'div',
     { class: 'row row-ai' },
-    h('span', { class: 'avatar small' },
-      h('span', { class: `icon i-${duel.persona.avatar}`, 'aria-hidden': 'true' }),
-    ),
+    personaAvatarEl(duel.persona, { small: true }),
     h('div', { class: 'bubble bubble-ai', text }),
   );
 }
@@ -544,9 +891,7 @@ function bubbleMe(text) {
 /** 对手「正在输入…」占位行：回合生成期间 & 已读不回演出共用。 */
 function typingBubble() {
   return h('div', { class: 'row row-ai' },
-    h('span', { class: 'avatar small' },
-      h('span', { class: `icon i-${state.duel.persona.avatar}`, 'aria-hidden': 'true' }),
-    ),
+    personaAvatarEl(state.duel.persona, { small: true }),
     h('div', { class: 'bubble bubble-ai typing' }, h('i'), h('i'), h('i')),
   );
 }
@@ -569,9 +914,7 @@ function stickerAI(sticker) {
   return h(
     'div',
     { class: 'sticker-row ai' },
-    h('span', { class: 'avatar small' },
-      h('span', { class: `icon i-${state.duel.persona.avatar}`, 'aria-hidden': 'true' }),
-    ),
+    personaAvatarEl(state.duel.persona, { small: true }),
     stickerBubble(sticker),
   );
 }
@@ -752,12 +1095,12 @@ async function submitTurn(rawText, { preset = false, timeout = false } = {}) {
     aiSticker: turn.sticker,
   });
 
-  // 玩家中途回了大厅：回合照常记账（上面已入 state.duel），界面等回来再补画
+  // 玩家中途回了大厅/对线房：回合照常记账（上面已入 state.duel），界面等回来再补画
   if (state.screen !== 'duel') {
     if (result) {
       state.duel.result = result;
-      // 大厅主卡的「对局进行中」角标是离场快照 —— 胜负落账后刷新掉
-      if (state.screen === 'lobby') render();
+      // 大厅主卡角标、对线房恢复条都是离场快照 —— 胜负落账后刷新掉
+      if (state.screen === 'lobby' || state.screen === 'select') render();
     }
     state.busy = false;
     return;
@@ -959,6 +1302,7 @@ async function finish(result) {
   const { duel } = state;
   duel.result = result;
   stopTimer();
+  settleDuel();
 
   if (result === 'win') {
     blip('breakdown');
@@ -1075,12 +1419,14 @@ function viewReport() {
   return h(
     'section',
     { class: `report report-${duel.result}` },
+    screenBg(duel.persona.category),
     h(
       'div',
       { class: 'report-head' },
       h('div', { class: `result-badge result-${duel.result}`, text: copy.headline }),
       h('p', { class: 'result-sub', text: copy.sub }),
     ),
+    duel.result === 'win' && !isEq ? spotlightEl() : null,
     h(
       'div',
       { class: 'title-card' },
@@ -1090,13 +1436,12 @@ function viewReport() {
         h('p', { class: 'title-desc', text: title.desc }),
       ),
     ),
+    settlementBlock(),
     h(
       'div',
       { class: 'stats' },
       stat('对手', [
-      h('span', { class: 'avatar inline', 'aria-hidden': 'true' },
-        h('span', { class: `icon i-${duel.persona.avatar}` }),
-      ),
+      personaAvatarEl(duel.persona, { inline: true }),
       ` ${duel.persona.name}`,
     ]),
       stat('回合数', `${duel.rounds.length} / ${MAX_ROUNDS}`),
@@ -1145,6 +1490,59 @@ function viewReport() {
   );
 }
 
+/** 佩戴中的称号（对局 meta 行等处的小标签）；未佩戴返回 null。 */
+function equippedTitleTag() {
+  const worn = state.profile.equippedTitle ? titleById(state.profile.equippedTitle) : null;
+  return worn ? h('span', { class: 'duel-title-tag', text: worn.name }) : null;
+}
+
+/** 成就结算区：经验/金币/心 + 升级横幅 + 成就位。数据取自终局挂账，不重算。 */
+function settlementBlock() {
+  const s = state.duel?.settlement;
+  if (!s) return null;
+  const { after } = s;
+  const xpPct = Math.min(100, Math.round((after.xp / ECONOMY.XP_TO_NEXT(after.level)) * 100));
+  const worn = state.profile.equippedTitle ? titleById(state.profile.equippedTitle) : null;
+  return h(
+    'div',
+    { class: 'settlement' },
+    h('span', { class: 'settle-head', text: '成长结算' }),
+    h(
+      'div',
+      { class: 'settle-row' },
+      h('span', { class: 'settle-label', text: '经验' }),
+      h('span', { class: 'settle-gain', text: `+${s.xp}` }),
+      h('div', { class: 'settle-track' },
+        h('div', { class: 'settle-fill', style: `width:${xpPct}%` })),
+      h('span', { class: 'settle-level', text: `Lv.${after.level}` }),
+    ),
+    h(
+      'div',
+      { class: 'settle-row' },
+      h('span', { class: 'settle-label', text: '金币' }),
+      h('span', { class: 'settle-gain', text: `金币 +${s.coins}` }),
+    ),
+    h(
+      'div',
+      { class: 'settle-row' },
+      h('span', { class: 'settle-label', text: '称号' }),
+      h('span', { class: 'settle-gain', text: worn ? worn.name : '未佩戴' }),
+    ),
+    h(
+      'div',
+      { class: 'settle-row' },
+      h('span', { class: 'settle-label', text: '生命' }),
+      h('span', {
+        class: `settle-gain${s.heartsDelta < 0 ? ' hurt' : ''}`,
+        text: s.heartsDelta < 0 ? `心 ${s.heartsDelta}` : '心 无变动',
+      }),
+    ),
+    ...s.levelUps.map((lv) => h('div', { class: 'settle-levelup', text: `升级！Lv.${lv}` })),
+    ...s.newAchievements.map((def) =>
+      h('div', { class: 'settle-achv', text: `成就解锁 · ${def.name} · +${def.coins ?? 0} 金币` })),
+  );
+}
+
 function stat(label, value) {
   return h(
     'div',
@@ -1167,7 +1565,8 @@ function goSelect() {
 function exportCard() {
   const { duel } = state;
   if (!duel) return;
-  return exportDuelCard({ duel, copy: resultCopyOf(duel), engine: engineLabel() });
+  const worn = state.profile.equippedTitle ? titleById(state.profile.equippedTitle) : null;
+  return exportDuelCard({ duel, copy: resultCopyOf(duel), engine: engineLabel(), wornTitle: worn?.name ?? null });
 }
 
 /* ------------------------------------------------------------------ */
@@ -1185,6 +1584,8 @@ function openSettingsDialog() {
     onResume: resumeTimer,
     onChange: () => {
       repaintEngine();
+      // 弹窗里可能改了成长设置（演示模式）——重新读档再重绘
+      state.profile = loadProfile();
       // 只有停在大厅/选人屏时才重绘 —— 对线中途重绘会清掉聊天记录
       if (state.screen === 'lobby' || state.screen === 'select') render();
     },

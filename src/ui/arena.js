@@ -14,7 +14,7 @@
  * 渲染铁律：全部经 h() 的 textContent，绝不拼 HTML。
  * 样式在 ./arena.css，由 index.html 以 <link> 加载（同 library.css 先例）。
  */
-import { h } from '../lib/dom.js';
+import { backBtn, h } from '../lib/dom.js';
 import { SCENARIOS } from '../data/scenarios.js';
 import { blip } from '../lib/audio.js';
 import {
@@ -32,7 +32,7 @@ import { judgeArenaRound, arenaRecap } from '../lib/llm.js';
 const other = (p) => (p === 'p1' ? 'p2' : 'p1');
 const scenarioById = (id) => SCENARIOS.find((s) => s.id === id);
 
-export function createArenaView({ onBack, openSettings }) {
+export function createArenaView({ onBack, openSettings, onArenaEnd }) {
   const root = h('section', { class: 'arena' });
 
   let disposed = false;
@@ -40,9 +40,22 @@ export function createArenaView({ onBack, openSettings }) {
   let arena = null;    // 引擎整场状态；null = 还在 intro
   let answering = 'p1'; // scene 相位正在作答的人
   let lastVerdict = null; // reveal 相位要展示的本轮评分（fallback 原因也在这里）
+  let ended = false;   // 终盘入账只报一次（onArenaEnd）
   let timerId = null;
   let secondsLeft = 0;
   const ui = {}; // 当前相位需要原地更新的节点（timer / input）
+
+  /** 终盘一次性上报：win 按设备档口径记「分出胜负」（hot-seat 无主客，平局不算胜）。 */
+  function reportEnd(recap) {
+    if (ended || !onArenaEnd) return;
+    ended = true;
+    const result = arenaResult(arena);
+    const best = arena.scores.reduce(
+      (acc, r) => Math.max(acc, r.p1.score, r.p2.score),
+      0,
+    );
+    onArenaEnd({ win: result.winner !== 'draw', bestRound: best, recap: !!recap });
+  }
 
   /* ---- 计时器：只在 scene 相位活着，dispose 一律清 ---- */
 
@@ -77,9 +90,10 @@ export function createArenaView({ onBack, openSettings }) {
     phase = 'intro';
     arena = null;
     lastVerdict = null;
+    ended = false; // 再来一局是新的一账
     stopTimer();
     root.replaceChildren(
-      h('button', { class: 'back-btn', type: 'button', text: '← 大厅', onclick: onBack }),
+      backBtn('大厅', onBack),
       h(
         'div',
         { class: 'arena-head' },
@@ -153,7 +167,7 @@ export function createArenaView({ onBack, openSettings }) {
     ui.timer = h('span', { class: 'arena-timer', text: `${ARENA_ANSWER_SECONDS}s` });
 
     root.replaceChildren(
-      h('button', { class: 'back-btn', type: 'button', text: '← 大厅', onclick: onBack }),
+      backBtn('大厅', onBack),
       h(
         'div',
         { class: 'arena-head' },
@@ -214,7 +228,7 @@ export function createArenaView({ onBack, openSettings }) {
   function paintHandoff(nextPlayer) {
     phase = 'handoff';
     root.replaceChildren(
-      h('button', { class: 'back-btn', type: 'button', text: '← 大厅', onclick: onBack }),
+      backBtn('大厅', onBack),
       h(
         'div',
         { class: 'arena-head' },
@@ -264,7 +278,7 @@ export function createArenaView({ onBack, openSettings }) {
 
   function paintJudging(line) {
     root.replaceChildren(
-      h('button', { class: 'back-btn', type: 'button', text: '← 大厅', onclick: onBack }),
+      backBtn('大厅', onBack),
       h(
         'div',
         { class: 'arena-head' },
@@ -307,7 +321,7 @@ export function createArenaView({ onBack, openSettings }) {
       );
 
     root.replaceChildren(
-      h('button', { class: 'back-btn', type: 'button', text: '← 大厅', onclick: onBack }),
+      backBtn('大厅', onBack),
       h(
         'div',
         { class: 'arena-head' },
@@ -349,6 +363,7 @@ export function createArenaView({ onBack, openSettings }) {
 
   function paintRecap(recap) {
     phase = 'recap';
+    reportEnd(recap);
     const result = arenaResult(arena);
     const totals = arenaTotals(arena);
     const winnerLine =
@@ -369,7 +384,7 @@ export function createArenaView({ onBack, openSettings }) {
       : null;
 
     root.replaceChildren(
-      h('button', { class: 'back-btn', type: 'button', text: '← 大厅', onclick: onBack }),
+      backBtn('大厅', onBack),
       h(
         'section',
         { class: 'arena-recap' },

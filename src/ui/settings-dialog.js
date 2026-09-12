@@ -10,6 +10,7 @@ import { h } from '../lib/dom.js';
 import { PROVIDER_OPTIONS, presetList } from '../data/providers.js';
 import { loadSettings, saveSettings, clearSettings, maskKey } from '../lib/settings.js';
 import { ROUND_SECONDS_OPTIONS, loadRoundSeconds, saveRoundSeconds } from '../lib/duel-options.js';
+import { loadProfile, saveProfile } from '../lib/profile.js';
 import { testConnection } from '../lib/llm.js';
 import { blip } from '../lib/audio.js';
 import { applyTheme, onTheme } from '../lib/theme.js';
@@ -254,6 +255,30 @@ export function openSettings({ onPause, onResume, onChange } = {}) {
     onResume?.();
   }
 
+  /** 演示模式即时落盘（不进 AI draft），走 onChange 让主屏重读成长档。 */
+  function demoSegButton(next, label) {
+    const active = loadProfile().demoMode === next;
+    return h('button', {
+      class: `demo-seg-btn${active ? ' is-active' : ''}`,
+      type: 'button',
+      text: label,
+      'aria-pressed': String(active),
+      onclick: (event) => {
+        const p = loadProfile();
+        if (p.demoMode !== next) {
+          p.demoMode = next;
+          saveProfile(p);
+          onChange?.();
+        }
+        event.currentTarget.parentElement.querySelectorAll('.demo-seg-btn').forEach((btn) => {
+          const on = btn === event.currentTarget;
+          btn.classList.toggle('is-active', on);
+          btn.setAttribute('aria-pressed', String(on));
+        });
+      },
+    });
+  }
+
   const backdrop = h(
     'div',
     {
@@ -304,6 +329,11 @@ export function openSettings({ onPause, onResume, onChange } = {}) {
           ),
         ),
         h('p', { class: 'field-hint', text: '回合时限，改动从下一局开始生效。' }),
+        h('div', { class: 'demo-seg' },
+          demoSegButton(false, '关'),
+          demoSegButton(true, '开'),
+        ),
+        h('p', { class: 'field-hint', text: '演示模式：无限生命，评审与现场演示用。' }),
       ),
       body,
       status,

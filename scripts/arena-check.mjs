@@ -300,7 +300,12 @@ global.clearInterval = (id) => {
 const { createArenaView } = await import('../src/ui/arena.js');
 let backCount = 0;
 let settingsCount = 0;
-const view = createArenaView({ onBack: () => { backCount += 1; }, openSettings: () => { settingsCount += 1; } });
+const arenaEndEvents = [];
+const view = createArenaView({
+  onBack: () => { backCount += 1; },
+  openSettings: () => { settingsCount += 1; },
+  onArenaEnd: (ev) => arenaEndEvents.push(ev),
+});
 window.document.body.replaceChildren(view.root);
 const $ = (sel) => view.root.querySelector(sel);
 const $$ = (sel) => [...view.root.querySelectorAll(sel)];
@@ -393,6 +398,13 @@ if (!hintBtn) fail('提示行应有「接入你的 AI」入口');
 hintBtn.click();
 if (settingsCount !== 1) fail('接入按钮应调 openSettings 回调');
 
+// M4 终盘入账回调：整场恰好上报一次，win/bestRound/recap 与实况一致（P1 15:6 胜，全场最高 5 分，本地复盘已生成）
+if (arenaEndEvents.length !== 1) fail(`终盘应恰好上报一次 onArenaEnd，实际 ${arenaEndEvents.length}`);
+const endEv = arenaEndEvents[0];
+if (endEv.win !== true) fail('P1 胜局场上 win 应为 true');
+if (endEv.bestRound !== 5) fail(`bestRound 应为全场最高分 5，实际 ${endEv.bestRound}`);
+if (endEv.recap !== true) fail('本地复盘已生成，recap 应为 true');
+
 // 再来一局：回 intro、名字回默认
 $('.arena-again').click();
 if (!$('.arena-intro')) fail('再来一局应回 intro');
@@ -401,6 +413,7 @@ if (view.root.querySelector('.arena-name-input')?.value !== '玩家一') fail('�
 // 返回大厅回调
 $('.back-btn').click();
 if (backCount !== 1) fail('「← 大厅」应触发 onBack');
+if (arenaEndEvents.length !== 1) fail('再来一局 / 返回大厅不应再次上报 onArenaEnd');
 
 // dispose 契约：计时器活跃时销毁 → interval 清空
 const view2 = createArenaView({ onBack: () => {}, openSettings: () => {} });

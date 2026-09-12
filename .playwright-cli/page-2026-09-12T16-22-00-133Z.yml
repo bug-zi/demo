@@ -1,0 +1,33 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]: 嘴强王者TALK KING
+    - generic [ref=e5]:
+      - generic [ref=e6]: 本地引擎
+      - button "皮肤选择" [ref=e7] [cursor=pointer]
+      - button "切换到深色主题" [ref=e9] [cursor=pointer]
+      - button "接入你的 AI" [ref=e11] [cursor=pointer]
+      - button "声音" [ref=e13] [cursor=pointer]
+  - main [ref=e15]:
+    - generic [ref=e16]:
+      - generic [ref=e17]:
+        - heading "今天想跟谁练练？" [level=1] [ref=e18]
+        - paragraph [ref=e19]: 对线房三间都已亮灯，先从最热闹那间开始。
+      - button "Lv.1 金币 0 生命 5/5 成就 0/36" [ref=e20] [cursor=pointer]:
+        - generic [ref=e21]: Lv.1
+        - generic [ref=e22]: 金币 0
+        - generic [ref=e23]: 生命 5/5
+        - generic [ref=e25]: 成就 0/36
+      - generic [ref=e26]:
+        - button "对线房 选个对手开练：点火破防，或灭火哄人。" [ref=e27] [cursor=pointer]:
+          - generic [ref=e28]: 对线房
+          - paragraph [ref=e30]: 选个对手开练：点火破防，或灭火哄人。
+        - button "话术资料库 回怼话术随身查阅，收藏自己的必杀句。" [ref=e31] [cursor=pointer]:
+          - generic [ref=e32]: 话术资料库
+          - paragraph [ref=e34]: 回怼话术随身查阅，收藏自己的必杀句。
+        - button "好友擂台 同一块屏幕，两个人，AI 当裁判。" [ref=e35] [cursor=pointer]:
+          - generic [ref=e36]: 好友擂台
+          - paragraph [ref=e38]: 同一块屏幕，两个人，AI 当裁判。
+      - paragraph [ref=e39]: 擂台也开张了：是骡子是马，拉个朋友上场遛遛。
+      - generic [ref=e40]:
+        - generic [ref=e41]: 对手现在只会背台词。
+        - button "接入你的 AI →" [ref=e42] [cursor=pointer]

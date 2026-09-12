@@ -56,6 +56,25 @@ export const EQ_TITLES = [
   },
 ];
 
+/** 成就专属称号（M4 第二来源，由 achievements.js 的 def.title 发放入册）。 */
+
+export const ACHIEVEMENT_TITLES = [
+  {
+    id: 'jiafang-harvester',
+    name: '甲方收割机',
+    desc: '谈判房全通关。从今天起，需求文档吓不到你。',
+    rank: 'SR',
+  },
+];
+
+/** 称号全图（三表合并，成就「名满天下」与成就墙称号柜都以它为准）。 */
+export const ALL_TITLES = [...TITLES, ...EQ_TITLES, ...ACHIEVEMENT_TITLES];
+
+/** 按 id 查称号定义；陌生 id（脏数据）返回 null。 */
+export function titleById(id) {
+  return ALL_TITLES.find((t) => t.id === id) ?? null;
+}
+
 /**
  * @param {object} duel 对局数据
  * @returns {object} 称号对象

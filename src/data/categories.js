@@ -1,13 +1,13 @@
 /**
  * 场景分类登记表：选人屏分组 + 引擎模式来源。
  * mode: 'fire' 点火局（把对方激到破防）/ 'extinguish' 灭火局（把对方哄到消气）。
- * locked 分组在选人屏显示「即将开放」占位，不做死链。
+ * locked 分组在选人屏显示「即将开放」占位，不做死链（B1 情商房人设到位已解锁）。
  */
 
 export const CATEGORIES = [
   { id: 'gang', name: '杠精房', mode: 'fire', hint: '点火局 · 把 TA 说到破防' },
   { id: 'deal', name: '谈判房', mode: 'fire', hint: '点火局 · 把 TA 说到破防' },
-  { id: 'eq', name: '情商房', mode: 'extinguish', hint: '灭火局 · 把 TA 哄到消气', locked: true },
+  { id: 'eq', name: '情商房', mode: 'extinguish', hint: '灭火局 · 把 TA 哄到消气' },
 ];
 
 const FALLBACK_CATEGORY = CATEGORIES[0];

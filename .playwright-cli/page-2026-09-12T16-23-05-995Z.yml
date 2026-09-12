@@ -1,0 +1,153 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]: 嘴强王者TALK KING
+    - generic [ref=e5]:
+      - generic [ref=e6]: 本地引擎
+      - button "皮肤选择" [ref=e7] [cursor=pointer]
+      - button "切换到深色主题" [ref=e9] [cursor=pointer]
+      - button "接入你的 AI" [ref=e11] [cursor=pointer]
+      - button "声音" [ref=e13] [cursor=pointer]
+  - main [ref=e15]:
+    - generic [ref=e351]:
+      - button "大厅" [ref=e352] [cursor=pointer]
+      - generic [ref=e355]:
+        - generic [ref=e357]:
+          - generic [ref=e358]: 五彩斑斓甲方
+          - generic [ref=e359]: 第 1 轮 · 进行中
+        - button "回到对局" [ref=e360] [cursor=pointer]
+      - generic [ref=e361]:
+        - heading "选个对手开练" [level=1] [ref=e362]
+        - paragraph [ref=e363]: 点火房把 TA 说到破防；灭火房把 TA 哄到消气。
+      - generic [ref=e364]:
+        - generic [ref=e371]: 心池满员
+        - button "50 币补一颗" [disabled] [ref=e372]
+      - generic [ref=e373]:
+        - generic [ref=e374]:
+          - generic [ref=e375]: 杠精房
+          - generic [ref=e376]: 点火局 · 把 TA 说到破防
+        - generic [ref=e377]:
+          - button "评论区圣人 难度 1/5 「理性讨论，别激动」 头像是一片禅意山水，签名「理性讨论，拒绝阴阳」。他刚在你的评论区连盖了三层楼。 推荐" [ref=e378] [cursor=pointer]:
+            - generic [ref=e381]:
+              - generic [ref=e382]: 评论区圣人
+              - generic "难度 1/5" [ref=e383]
+            - paragraph [ref=e389]: 「理性讨论，别激动」
+            - paragraph [ref=e390]: 头像是一片禅意山水，签名「理性讨论，拒绝阴阳」。他刚在你的评论区连盖了三层楼。
+            - generic [ref=e391]: 推荐
+          - button "阴阳怪气亲戚 难度 2/5 「哎哟，还在北京呢？」 过年饭桌上坐你斜对面，夹菜的间隙顺便把你的整个人生点评一遍。" [ref=e392] [cursor=pointer]:
+            - generic [ref=e395]:
+              - generic [ref=e396]: 阴阳怪气亲戚
+              - generic "难度 2/5" [ref=e397]
+            - paragraph [ref=e403]: 「哎哟，还在北京呢？」
+            - paragraph [ref=e404]: 过年饭桌上坐你斜对面，夹菜的间隙顺便把你的整个人生点评一遍。
+          - button "杠精网友 难度 3/5 「有一说一，你这话逻辑有问题」 评论区里冒出来的一个回复，头像是默认的灰色小人，简介写着「理性讨论」。" [ref=e405] [cursor=pointer]:
+            - generic [ref=e408]:
+              - generic [ref=e409]: 杠精网友
+              - generic "难度 3/5" [ref=e410]
+            - paragraph [ref=e416]: 「有一说一，你这话逻辑有问题」
+            - paragraph [ref=e417]: 评论区里冒出来的一个回复，头像是默认的灰色小人，简介写着「理性讨论」。
+          - button "半瓶水大神 难度 4/5 「这你都不知道？」 群里号称全栈大神，签名写着「十年从业」。可他晒的项目截图，水印都没抠干净。" [ref=e418] [cursor=pointer]:
+            - generic [ref=e421]:
+              - generic [ref=e422]: 半瓶水大神
+              - generic "难度 4/5" [ref=e423]
+            - paragraph [ref=e429]: 「这你都不知道？」
+            - paragraph [ref=e430]: 群里号称全栈大神，签名写着「十年从业」。可他晒的项目截图，水印都没抠干净。
+          - button "群规执法者 难度 4/5 「群规第几条了解一下」 他不是群主，但他把群规倒背如流。你刚发的那条消息，已经被他截图存证。" [ref=e431] [cursor=pointer]:
+            - generic [ref=e434]:
+              - generic [ref=e435]: 群规执法者
+              - generic "难度 4/5" [ref=e436]
+            - paragraph [ref=e442]: 「群规第几条了解一下」
+            - paragraph [ref=e443]: 他不是群主，但他把群规倒背如流。你刚发的那条消息，已经被他截图存证。
+          - button "阴谋论大师 难度 5/5 「这事没有表面那么简单」 长帖九宫格配图，从一条新闻推到整个世界。他刚给你发来一句「你以为的巧合，都是设计」。" [ref=e444] [cursor=pointer]:
+            - generic [ref=e447]:
+              - generic [ref=e448]: 阴谋论大师
+              - generic "难度 5/5" [ref=e449]
+            - paragraph [ref=e455]: 「这事没有表面那么简单」
+            - paragraph [ref=e456]: 长帖九宫格配图，从一条新闻推到整个世界。他刚给你发来一句「你以为的巧合，都是设计」。
+      - generic [ref=e457]:
+        - generic [ref=e458]:
+          - generic [ref=e459]: 谈判房
+          - generic [ref=e460]: 点火局 · 把 TA 说到破防
+        - generic [ref=e461]:
+          - button "二手车贩子 难度 1/5 「原版原漆，一手车」 二手市场最里侧，他拍着一台漆面锃亮的轿车：表显三万公里，方向盘包浆油亮。 推荐" [ref=e462] [cursor=pointer]:
+            - generic [ref=e465]:
+              - generic [ref=e466]: 二手车贩子
+              - generic "难度 1/5" [ref=e467]
+            - paragraph [ref=e473]: 「原版原漆，一手车」
+            - paragraph [ref=e474]: 二手市场最里侧，他拍着一台漆面锃亮的轿车：表显三万公里，方向盘包浆油亮。
+            - generic [ref=e475]: 推荐
+          - button "砍价摊主 难度 2/5 「同学，我这是开张生意，不赚钱」 夜市第三个摊位，老板娘嘴里嗑着瓜子，你要的那件挂着一圈小彩灯。" [ref=e476] [cursor=pointer]:
+            - generic [ref=e479]:
+              - generic [ref=e480]: 砍价摊主
+              - generic "难度 2/5" [ref=e481]
+            - paragraph [ref=e487]: 「同学，我这是开张生意，不赚钱」
+            - paragraph [ref=e488]: 夜市第三个摊位，老板娘嘴里嗑着瓜子，你要的那件挂着一圈小彩灯。
+          - button "房产中介 难度 3/5 「这套明天就没了」 他朋友圈每天三条「最后机会」。带你看的第三套房，他说卖家的心理防线已经崩了。" [ref=e489] [cursor=pointer]:
+            - generic [ref=e492]:
+              - generic [ref=e493]: 房产中介
+              - generic "难度 3/5" [ref=e494]
+            - paragraph [ref=e500]: 「这套明天就没了」
+            - paragraph [ref=e501]: 他朋友圈每天三条「最后机会」。带你看的第三套房，他说卖家的心理防线已经崩了。
+          - button "画饼老板 难度 4/5 「年轻人不要只看钱」 周五晚上七点半，站在你工位旁边，手里端着一杯没喝完的美式。" [ref=e502] [cursor=pointer]:
+            - generic [ref=e505]:
+              - generic [ref=e506]: 画饼老板
+              - generic "难度 4/5" [ref=e507]
+            - paragraph [ref=e513]: 「年轻人不要只看钱」
+            - paragraph [ref=e514]: 周五晚上七点半，站在你工位旁边，手里端着一杯没喝完的美式。
+          - button "HR 谈薪官 难度 4/5 「薪资是全面的」 会议室里她推过来一张薪酬结构图，基本工资那一栏矮得像被压缩过。" [ref=e515] [cursor=pointer]:
+            - generic [ref=e518]:
+              - generic [ref=e519]: HR 谈薪官
+              - generic "难度 4/5" [ref=e520]
+            - paragraph [ref=e526]: 「薪资是全面的」
+            - paragraph [ref=e527]: 会议室里她推过来一张薪酬结构图，基本工资那一栏矮得像被压缩过。
+          - button "五彩斑斓甲方 难度 5/5 「我要的是那种感觉，你懂吧」 微信头像是一朵莲花，昵称是「岁月静好」，现在是周五晚上九点四十七。" [ref=e528] [cursor=pointer]:
+            - generic [ref=e531]:
+              - generic [ref=e532]: 五彩斑斓甲方
+              - generic "难度 5/5" [ref=e533]
+            - paragraph [ref=e539]: 「我要的是那种感觉，你懂吧」
+            - paragraph [ref=e540]: 微信头像是一朵莲花，昵称是「岁月静好」，现在是周五晚上九点四十七。
+      - generic [ref=e541]:
+        - generic [ref=e542]:
+          - generic [ref=e543]: 情商房
+          - generic [ref=e544]: 灭火局 · 把 TA 哄到消气
+        - generic [ref=e545]:
+          - button "奶茶洒了的同事 难度 1/5 「我的奶茶！！」 工位上，一杯全糖去冰的芋泥波平躺在键盘上，文档界面还在泡着。肇事者就是你。 推荐" [ref=e546] [cursor=pointer]:
+            - generic [ref=e549]:
+              - generic [ref=e550]: 奶茶洒了的同事
+              - generic "难度 1/5" [ref=e551]
+            - paragraph [ref=e557]: 「我的奶茶！！」
+            - paragraph [ref=e558]: 工位上，一杯全糖去冰的芋泥波平躺在键盘上，文档界面还在泡着。肇事者就是你。
+            - generic [ref=e559]: 推荐
+          - button "被插队的路人 难度 2/5 「后面排着呢！都排着呢！」 网红店门口的长队里，他攥着排号单，正和一家五口对峙。你是他同来的朋友。" [ref=e560] [cursor=pointer]:
+            - generic [ref=e563]:
+              - generic [ref=e564]: 被插队的路人
+              - generic "难度 2/5" [ref=e565]
+            - paragraph [ref=e571]: 「后面排着呢！都排着呢！」
+            - paragraph [ref=e572]: 网红店门口的长队里，他攥着排号单，正和一家五口对峙。你是他同来的朋友。
+          - button "被放鸽子的好友 难度 3/5 「你还好意思发消息？」 展馆门口，他顶着太阳站了两小时，手机屏幕上是你们约好的那条聊天记录。" [ref=e573] [cursor=pointer]:
+            - generic [ref=e576]:
+              - generic [ref=e577]: 被放鸽子的好友
+              - generic "难度 3/5" [ref=e578]
+            - paragraph [ref=e584]: 「你还好意思发消息？」
+            - paragraph [ref=e585]: 展馆门口，他顶着太阳站了两小时，手机屏幕上是你们约好的那条聊天记录。
+          - button "催婚被拱火的老爹 难度 4/5 「我老脸往哪儿搁！」 电话那头，他刚从亲戚饭局上下来，一桌人的追问还堵在胸口。你是他闺女也是他儿子，随你。" [ref=e586] [cursor=pointer]:
+            - generic [ref=e589]:
+              - generic [ref=e590]: 催婚被拱火的老爹
+              - generic "难度 4/5" [ref=e591]
+            - paragraph [ref=e597]: 「我老脸往哪儿搁！」
+            - paragraph [ref=e598]: 电话那头，他刚从亲戚饭局上下来，一桌人的追问还堵在胸口。你是他闺女也是他儿子，随你。
+          - button "深夜赶稿的挚友 难度 5/5 「两点了我还在改稿」 凌晨两点，聊天框顶上「对方正在输入…」亮了又灭。桌面上第三杯咖啡还冒着热气。" [ref=e599] [cursor=pointer]:
+            - generic [ref=e602]:
+              - generic [ref=e603]: 深夜赶稿的挚友
+              - generic "难度 5/5" [ref=e604]
+            - paragraph [ref=e610]: 「两点了我还在改稿」
+            - paragraph [ref=e611]: 凌晨两点，聊天框顶上「对方正在输入…」亮了又灭。桌面上第三杯咖啡还冒着热气。
+          - button "一星差评买家 难度 5/5 「碎了！到手就是碎的！」 售后对话框里躺着三张碎杯子照片和一串感叹号。你是今晚值班的客服，工号 07。" [ref=e612] [cursor=pointer]:
+            - generic [ref=e615]:
+              - generic [ref=e616]: 一星差评买家
+              - generic "难度 5/5" [ref=e617]
+            - paragraph [ref=e623]: 「碎了！到手就是碎的！」
+            - paragraph [ref=e624]: 售后对话框里躺着三张碎杯子照片和一串感叹号。你是今晚值班的客服，工号 07。
+      - paragraph [ref=e625]: 每个人都有软肋，藏着的那种。但话说太冲，先破防的可能是你自己。
+      - generic [ref=e626]:
+        - generic [ref=e627]: 对手现在只会背台词。
+        - button "接入你的 AI →" [ref=e628] [cursor=pointer]

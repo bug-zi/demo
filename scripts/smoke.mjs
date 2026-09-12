@@ -1,7 +1,7 @@
 // 冒烟测试：不开浏览器，直接跑引擎 + 本地大脑，验证四条路径都能走通。
 // 用法：npm run smoke
 import { PERSONAS } from '../src/data/personas.js';
-import { ROUND_SECONDS, createDuel, recordTurn, uniqueSoftspotHits, stageOf } from '../src/lib/duel-engine.js';
+import { ROUND_SECONDS, createDuel, recordTurn, uniqueSoftspotHits, stageOf, matchSoftspot } from '../src/lib/duel-engine.js';
 import { loadRoundSeconds, saveRoundSeconds } from '../src/lib/duel-options.js';
 import { categoryOf } from '../src/data/categories.js';
 import { generateTurn, engineLabel, testConnection } from '../src/lib/llm.js';
@@ -101,10 +101,10 @@ if (categoryOf(PERSONAS.find((p) => p.id === 'qinqi')).id !== 'gang') fail('阴�
 if (categoryOf(PERSONAS.find((p) => p.id === 'laoban')).id !== 'deal') fail('画饼老板应归谈判房');
 if (categoryOf(PERSONAS.find((p) => p.id === 'tanzhu')).id !== 'deal') fail('砍价摊主应归谈判房');
 if (categoryOf(PERSONAS.find((p) => p.id === 'jiafang')).id !== 'deal') fail('五彩斑斓甲方应归谈判房');
-if (PERSONAS.length !== 5) fail(`人设应恰 5 个（A1 扩充后），实际 ${PERSONAS.length}`);
+if (PERSONAS.length !== 18) fail(`人设应恰 18 个（5 原班 + B2 两房满 6 共 7 新 + B1 情商 6；B3 再增），实际 ${PERSONAS.length}`);
 
-// 5.6 专属破防演出数据契约（A2）：5 人设各配一种 finale，kind 互不重复、文案齐全；
-//      breakdown 台词仍需保留 —— 局内破防期回复兜底 + 未配 finale 的通用演出降级都靠它
+// 5.6 专属破防演出数据契约（A2/B1）：所有人设 finale 文案齐全；fire 房五人 kind 互不重复
+//      （B1 起情商房复用五种 kind 做消气向表达，重复合法）；breakdown 台词仍需保留
 const FINALE_KINDS = ['rapid', 'quit', 'recall', 'lights-off', 'read-none'];
 const finaleKinds = new Set();
 for (const p of PERSONAS) {
@@ -116,13 +116,13 @@ for (const p of PERSONAS) {
   if (typeof f.exitLine !== 'string' || !f.exitLine) fail(`${p.name} 的 finale.exitLine 应为非空文案`);
   if (f.kind === 'rapid' && f.lead.length < 4) fail('rapid 演出至少连发 4 条才有连环轰炸感');
   if (f.kind === 'recall' && !f.recallText) fail('recall 演出应配 recallText（那句要被撤回的话）');
-  finaleKinds.add(f.kind);
+  if (p.category !== 'eq') finaleKinds.add(f.kind);
 }
-if (finaleKinds.size !== 5) fail(`五个人的破防演出应各配一种 kind，实际只有 ${[...finaleKinds].join(',')}`);
+if (finaleKinds.size !== 5) fail(`fire 房五人的破防演出应各配一种 kind，实际只有 ${[...finaleKinds].join(',')}`);
 if (!PERSONAS.every((p) => Array.isArray(p.breakdown) && p.breakdown.length > 0)) {
   fail('breakdown 台词必须保留（破防期回复 + 通用演出降级）');
 }
-console.log('✓ 破防演出数据：5 人设各一种 kind / lead·exitLine 齐全 / breakdown 保留');
+console.log('✓ 破防演出数据：fire 五人 kind 不重复 / 文案齐全（eq 复用消气向）/ breakdown 保留');
 
 // 假情商人设：三个心结 delta 和 ≈ 90，与现有人设同标尺
 const EQ_PERSONA = {
@@ -190,6 +190,103 @@ const b3 = recordTurn(eq4, { userText: '你懂个屁', aiReply: '……', hitTyp
 if (b3.after !== 82) fail('低怒气浇油应反弹 +12 到 82，实际 ' + b3.after);
 console.log('✓ 灭火局：初始 100 / 安抚降怒 / 同心结递减 / ≤20 判 win / 八轮判 lose / 浇油反弹');
 
+/* ------------------------------------------------------------------ */
+/* 5.7 引擎阻力参数（M2）：guard 玩家输出折扣 / drift 环境漂移          */
+/* ------------------------------------------------------------------ */
+
+const mk = (over = {}) => ({
+  id: 'g-test',
+  name: '阻力测试员',
+  category: 'gang',
+  softspots: [
+    { key: 'a', delta: 30, keywords: ['戳甲'] },
+    { key: 'b', delta: 88, keywords: ['戳乙'] },
+    { key: 'c', delta: 15, keywords: ['戳丙'] },
+  ],
+  ...over,
+});
+
+// 5.7.1 guard 只折玩家主动输出：软肋 30→27、hit 12→11（四舍五入）
+const guarded = createDuel(mk({ guard: 0.9 }));
+const gd1 = recordTurn(guarded, { userText: '戳甲', aiReply: '……', hitType: 'softspot', softspot: guarded.persona.softspots[0], quip: '' });
+if (gd1.delta !== 27) fail(`guard 0.9 应把软肋 30 折成 27，实际 ${gd1.delta}`);
+const gd2 = recordTurn(guarded, { userText: '但是这句话本身有证据吗，请问', aiReply: '……', hitType: 'hit', quip: '' });
+if (gd2.delta !== 11) fail(`guard 0.9 应把 hit 12 折成 11，实际 ${gd2.delta}`);
+
+// guard 不作用于自爆 / 沉默（自爆保持 -12，沉默保持 0）
+const gd3 = recordTurn(guarded, { userText: '你懂个屁', aiReply: '……', hitType: 'self_destruct', quip: '' });
+if (gd3.delta !== -12) fail(`guard 不该碰自爆的 -12，实际 ${g3.delta}`);
+const gd4 = recordTurn(guarded, { userText: '', aiReply: '……', hitType: 'miss', quip: '', silent: true });
+if (gd4.delta !== 0) fail(`沉默回合增量应为 0，实际 ${g4.delta}`);
+
+// 贴纸也吃 guard（全局递减之后再乘）
+const gs = createDuel(mk({ guard: 0.9 }));
+const gd5 = recordTurn(gs, { userText: '', aiReply: '……', hitType: 'miss', quip: '', sticker: stickerById('smug') });
+if (gd5.delta !== Math.round(stickerById('smug').delta * 0.9)) {
+  fail(`首张贴纸应过 guard 折成 ${Math.round(stickerById('smug').delta * 0.9)}，实际 ${g5.delta}`);
+}
+console.log('✓ guard：软肋/hit/贴纸按 0.9 折算四舍五入 / 自爆沉默豁免');
+
+// 5.7.2 drift（fire 方向）：每回合结算前补付「新完成回合」的漂移间隔（不重复补已结回合）
+const drifty = createDuel(mk({ drift: 2 }));
+recordTurn(drifty, { userText: '戳甲', aiReply: '……', hitType: 'softspot', softspot: drifty.persona.softspots[0], quip: '' }); // +30 → 30
+const d2 = recordTurn(drifty, { userText: '戳丙', aiReply: '……', hitType: 'softspot', softspot: drifty.persona.softspots[2], quip: '' });
+if (d2.before !== 28) fail(`第 2 回合结算前应补 1 个间隔漂移（30→28），实际 ${d2.before}`);
+if (d2.after !== 43) fail(`漂移后再结算 28+15=43，实际 ${d2.after}`);
+const d3r = recordTurn(drifty, { userText: '戳甲', aiReply: '……', hitType: 'softspot', softspot: drifty.persona.softspots[0], quip: '' });
+if (d3r.before !== 41) fail(`第 3 回合只应再补 1 个间隔（43→41，重复补会变 39），实际 ${d3r.before}`);
+if (d3r.after !== 56) fail(`41+15=56，实际 ${d3r.after}`);
+
+// 漂移贴地不穿：fire 漂到 0 为止；沉默回合照常吃漂移
+const fireFloor = createDuel(mk({ drift: 30 }));
+recordTurn(fireFloor, { userText: '但是这句话本身就有问题啊', aiReply: '……', hitType: 'hit', quip: '' }); // +12
+const ff2 = recordTurn(fireFloor, { userText: '', aiReply: '……', hitType: 'miss', quip: '', silent: true });
+if (ff2.before !== 0 || ff2.after !== 0) fail(`fire 漂移应贴地封 0，实际 ${ff2.before}/${ff2.after}`);
+console.log('✓ drift fire：按间隔增量补漂 / 贴地封 0 / 沉默回合照吃');
+
+// 5.7.3 drift（extinguish 方向）：向上漂（对方又上头），100 封顶
+const eqDriftDef = mk({
+  id: 'eq-drift',
+  name: '上头测试员',
+  category: 'eq',
+  drift: 30,
+  softspots: [{ key: 'a', delta: 30, keywords: ['哄'] }],
+});
+const eqd = createDuel(eqDriftDef);
+recordTurn(eqd, { userText: '哄', aiReply: '……', hitType: 'softspot', softspot: eqDriftDef.softspots[0], quip: '' }); // 100→70（elapsed 0 不漂）
+const ed2 = recordTurn(eqd, { userText: '嗯。', aiReply: '……', hitType: 'miss', quip: '' });
+if (ed2.before !== 100 || ed2.after !== 100) fail(`灭火局第 2 回合结算前应漂回 100 封顶，实际 ${ed2.before}/${ed2.after}`);
+
+// 灭火局 guard 在方向翻转后乘算：-30 → ×0.9 → -27
+const eqGuardDef = mk({
+  id: 'eq-guard',
+  name: '灭火阻力员',
+  category: 'eq',
+  guard: 0.9,
+  softspots: [{ key: 'a', delta: 30, keywords: ['哄'] }],
+});
+const eg = createDuel(eqGuardDef);
+const eg1 = recordTurn(eg, { userText: '哄', aiReply: '……', hitType: 'softspot', softspot: eqGuardDef.softspots[0], quip: '' });
+if (eg1.delta !== -27) fail(`灭火局翻转后再吃 guard 应 -27，实际 ${eg1.delta}`);
+console.log('✓ drift extinguish：向上漂 + 100 封顶 / 灭火 guard 翻转后乘算');
+
+// 5.7.4 漂移不吞胜局：只补既往回合（elapsed），当回合推送全额入账
+// 次序错成「含当回合」的话：88-4=84 + 15 = 99，胜局就没了
+const closer = createDuel(mk({ drift: 2 }));
+recordTurn(closer, { userText: '戳乙', aiReply: '……', hitType: 'softspot', softspot: closer.persona.softspots[1], quip: '' }); // +88 → 88
+const clinch = recordTurn(closer, { userText: '戳丙', aiReply: '……', hitType: 'softspot', softspot: closer.persona.softspots[2], quip: '' });
+if (clinch.before !== 86) fail(`终盘结算前只补既往 1 回合漂移（88→86），实际 ${clinch.before}`);
+if (clinch.after !== 100 || clinch.result !== 'win') fail(`最后一击 86+15 应破百判 win，实际 ${clinch.after}/${clinch.result}`);
+console.log('✓ 漂移不吞胜局：elapsed 不含当回合，最后一击全额结算');
+
+// 5.7.5 未配 guard/drift 的人设行为与旧版完全一致
+const plain = createDuel(mk());
+const p1 = recordTurn(plain, { userText: '戳甲', aiReply: '……', hitType: 'softspot', softspot: plain.persona.softspots[0], quip: '' });
+if (p1.delta !== 30) fail(`未配 guard 应全额 30，实际 ${p1.delta}`);
+const p2 = recordTurn(plain, { userText: '戳丙', aiReply: '……', hitType: 'softspot', softspot: plain.persona.softspots[2], quip: '' });
+if (p2.before !== 30 || p2.after !== 45) fail(`未配 drift 结算前后不应有漂移，实际 ${p2.before}/${p2.after}`);
+console.log('✓ 默认参数：无 guard/drift 字段时引擎行为与 2.0 一致');
+
 
 /* ------------------------------------------------------------------ */
 /* 6. 表情包：登记表 / 解析 / 回合结算 / 全局递减 / AI 选贴               */
@@ -223,7 +320,7 @@ if (unregistered.sticker !== null || unregistered.text !== '你好💖') fail('�
 console.log('✓ matchSticker：纯贴纸/混合/多贴纸取首/未注册不动');
 
 // 6.2 纯贴纸回合：hitType 覆写为 sticker、delta 全额、不占 freeText、record 记全
-const sd = createDuel(PERSONAS.find((p) => p.id === 'wangyou'));
+const sd = createDuel(PERSONAS.find((p) => p.id === 'tanzhu'));
 const smug = stickerById('smug');
 const st1 = recordTurn(sd, {
   userText: '', aiReply: '……', hitType: 'miss', quip: '',
@@ -244,7 +341,7 @@ if (st3.delta !== 0) fail(`第 3 张贴纸起应归零，实际 ${st3.delta}`);
 console.log('✓ 贴纸结算：纯贴纸回合 / record 字段 / 全局递减三档');
 
 // 6.4 文字+贴纸：正常分类再叠加贴纸增量，计入 freeText
-const fd = createDuel(PERSONAS.find((p) => p.id === 'wangyou'));
+const fd = createDuel(PERSONAS.find((p) => p.id === 'tanzhu'));
 const combo = recordTurn(fd, {
   userText: '但是你说的这个问题，可是有证据吗？', aiReply: '……', hitType: 'hit', quip: '',
   sticker: stickerById('smug'),
@@ -254,7 +351,7 @@ if (combo.record.stickerDelta !== smug.delta) fail('叠加回合的 stickerDelta
 if (fd.freeTextRounds !== 1) fail('文字+贴纸应计入 freeTextRounds');
 
 // 6.5 自爆拦截：都语无伦次了，表情包救不回来（但仍占用张数）
-const sd2 = createDuel(PERSONAS.find((p) => p.id === 'wangyou'));
+const sd2 = createDuel(PERSONAS.find((p) => p.id === 'tanzhu'));
 const bombed = recordTurn(sd2, { userText: '你懂个屁', aiReply: '……', hitType: 'self_destruct', quip: '', sticker: smug });
 if (bombed.delta !== -12 || bombed.record.stickerDelta !== 0) fail(`自爆回合贴纸不该落地，实际 ${bombed.delta}`);
 if (sd2.stickersSent !== 1) fail('自爆回合的贴纸仍应占用递减计数');
@@ -663,3 +760,88 @@ if (same) {
 }
 if (!same) fail('同一链接两次生成的 QR 矩阵应一致');
 console.log('✓ 战绩图：金句方向感知选取 / 斗图沉默排除 / 空局兜底 / 标签文案 / QR 矩阵结构');
+
+/* ==================================================================== */
+/* 8. 人设数据完整性（3.0 B1 起）：所有 persona 逐字段过检，加人即受约束   */
+/* ==================================================================== */
+{
+  const CATEGORIES_LEGAL = ['gang', 'deal', 'eq'];
+  const ids = new Set();
+  for (const p of PERSONAS) {
+    for (const field of ['id', 'name', 'category', 'avatar', 'tagline', 'intro', 'opener']) {
+      if (typeof p[field] !== 'string' || !p[field]) fail(`[数据完整性] ${p.id || '?'} 缺字段 ${field}`);
+    }
+    if (ids.has(p.id)) fail(`[数据完整性] 人设 id 重复：${p.id}`);
+    ids.add(p.id);
+    if (!CATEGORIES_LEGAL.includes(p.category)) fail(`[数据完整性] ${p.id} category 非法：${p.category}`);
+    if (!Number.isInteger(p.difficulty) || p.difficulty < 1 || p.difficulty > 5) {
+      fail(`[数据完整性] ${p.id} difficulty 应为 1-5 整数`);
+    }
+    if (!Array.isArray(p.catchphrases) || p.catchphrases.length < 2) fail(`[数据完整性] ${p.id} catchphrases 应 ≥2 条`);
+    if (!Array.isArray(p.presets) || p.presets.length < 3) fail(`[数据完整性] ${p.id} presets 应 ≥3 条（进攻/迂回/试探）`);
+
+    // 软肋 ×3：delta 域 + keywords 量（含口语/标点变体，只做包含匹配）
+    if (!Array.isArray(p.softspots) || p.softspots.length !== 3) fail(`[数据完整性] ${p.id} 软肋应恰 3 条`);
+    const keys = new Set();
+    for (const s of p.softspots) {
+      if (!s.key || !s.label) fail(`[数据完整性] ${p.id} 软肋缺 key/label`);
+      if (keys.has(s.key)) fail(`[数据完整性] ${p.id} 软肋 key 重复：${s.key}`);
+      keys.add(s.key);
+      if (!Number.isFinite(s.delta) || s.delta < 20 || s.delta > 40) {
+        fail(`[数据完整性] ${p.id} 软肋 ${s.key} delta 应在 20-40 域，实际 ${s.delta}`);
+      }
+      if (!Array.isArray(s.keywords) || s.keywords.length < 6) {
+        fail(`[数据完整性] ${p.id} 软肋 ${s.key} keywords 应 ≥6 个变体，实际 ${s.keywords?.length}`);
+      }
+      for (const kw of s.keywords) {
+        if (typeof kw !== 'string' || kw.length < 2) fail(`[数据完整性] ${p.id} 软肋 ${s.key} 存在过短关键词：${kw}`);
+      }
+    }
+
+    // stages 三键 + softspotReactions 三键齐（llm.js 按 key 兜底，缺 key 会漏到 stage 池）
+    for (const stage of ['polite', 'sarcastic', 'agitated']) {
+      if (!Array.isArray(p.stages?.[stage]) || p.stages[stage].length < 1) {
+        fail(`[数据完整性] ${p.id} stages.${stage} 应为非空台词数组`);
+      }
+    }
+    for (const s of p.softspots) {
+      const r = p.softspotReactions?.[s.key];
+      if (!Array.isArray(r) || r.length < 1) fail(`[数据完整性] ${p.id} softspotReactions 缺 ${s.key}（不许缺 key）`);
+    }
+
+    // breakdown：fire 房一次性破防词，情商房是暴怒常规池（开局语言，须够量）
+    if (!Array.isArray(p.breakdown) || p.breakdown.length < 1) fail(`[数据完整性] ${p.id} breakdown 不可为空`);
+    if (p.category === 'eq' && (p.breakdown.length < 6 || p.breakdown.length > 8)) {
+      fail(`[数据完整性] ${p.id}（情商房）breakdown 应为 6-8 条暴怒池，实际 ${p.breakdown.length}`);
+    }
+
+    // finale：kind 合法 + 文案齐全（文案方向按房自检，EQ 用消气向表达）
+    if (p.finale) {
+      const f = p.finale;
+      if (!['rapid', 'quit', 'recall', 'lights-off', 'read-none'].includes(f.kind)) {
+        fail(`[数据完整性] ${p.id} finale.kind 非法：${f.kind}`);
+      }
+      if (!Array.isArray(f.lead) || f.lead.length === 0) fail(`[数据完整性] ${p.id} finale.lead 应非空`);
+      if (typeof f.exitLine !== 'string' || !f.exitLine) fail(`[数据完整性] ${p.id} finale.exitLine 应非空`);
+      if (f.kind === 'recall' && !f.recallText) fail(`[数据完整性] ${p.id} recall 演出应配 recallText`);
+      if (f.kind === 'rapid' && f.lead.length < 4) fail(`[数据完整性] ${p.id} rapid 演出至少连发 4 条`);
+    }
+
+    // 预设必须命中三个互异软肋（旧的「命中即算过」自检挡不住串键 —— B2 抓过「截图水印」误串 evidence）
+    const presetKeys = new Set();
+    for (const text of p.presets) {
+      const spot = matchSoftspot(p, text);
+      if (!spot) fail(`[数据完整性] ${p.id} 预设未命中任何软肋：${text}`);
+      else presetKeys.add(spot.key);
+    }
+    if (presetKeys.size !== p.softspots.length) {
+      fail(`[数据完整性] ${p.id} 预设应命中 3 个互异软肋，实际 [${[...presetKeys].join(',')}]`);
+    }
+
+    // 阻力参数域（缺省 = 1.0/0 合法）
+    if (p.guard !== undefined && (p.guard < 0.7 || p.guard > 1.3)) fail(`[数据完整性] ${p.id} guard 越界：${p.guard}`);
+    if (p.drift !== undefined && (p.drift < 0 || p.drift > 5)) fail(`[数据完整性] ${p.id} drift 越界：${p.drift}`);
+  }
+  const eqCount = PERSONAS.filter((p) => p.category === 'eq').length;
+  console.log(`✓ 人设数据完整性：${PERSONAS.length} 人设逐字段过检（情商房 ${eqCount} 人）`);
+}

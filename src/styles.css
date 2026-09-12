@@ -171,6 +171,11 @@ body {
   mask-image: url('/assets/icons/close.svg');
 }
 
+.i-arrow-back {
+  -webkit-mask-image: url('/assets/icons/arrow_back.svg');
+  mask-image: url('/assets/icons/arrow_back.svg');
+}
+
 .i-star {
   -webkit-mask-image: url('/assets/icons/star.svg');
   mask-image: url('/assets/icons/star.svg');
@@ -209,6 +214,76 @@ body {
 .i-add_reaction {
   -webkit-mask-image: url('/assets/icons/add_reaction.svg');
   mask-image: url('/assets/icons/add_reaction.svg');
+}
+
+.i-favorite {
+  -webkit-mask-image: url('/assets/icons/favorite.svg');
+  mask-image: url('/assets/icons/favorite.svg');
+}
+
+.i-local_cafe {
+  -webkit-mask-image: url('/assets/icons/local_cafe.svg');
+  mask-image: url('/assets/icons/local_cafe.svg');
+}
+
+.i-groups {
+  -webkit-mask-image: url('/assets/icons/groups.svg');
+  mask-image: url('/assets/icons/groups.svg');
+}
+
+.i-schedule_send {
+  -webkit-mask-image: url('/assets/icons/schedule_send.svg');
+  mask-image: url('/assets/icons/schedule_send.svg');
+}
+
+.i-elderly {
+  -webkit-mask-image: url('/assets/icons/elderly.svg');
+  mask-image: url('/assets/icons/elderly.svg');
+}
+
+.i-nightlife {
+  -webkit-mask-image: url('/assets/icons/nightlife.svg');
+  mask-image: url('/assets/icons/nightlife.svg');
+}
+
+.i-star_half {
+  -webkit-mask-image: url('/assets/icons/star_half.svg');
+  mask-image: url('/assets/icons/star_half.svg');
+}
+
+.i-self_improvement {
+  -webkit-mask-image: url('/assets/icons/self_improvement.svg');
+  mask-image: url('/assets/icons/self_improvement.svg');
+}
+
+.i-science {
+  -webkit-mask-image: url('/assets/icons/science.svg');
+  mask-image: url('/assets/icons/science.svg');
+}
+
+.i-gavel {
+  -webkit-mask-image: url('/assets/icons/gavel.svg');
+  mask-image: url('/assets/icons/gavel.svg');
+}
+
+.i-travel_explore {
+  -webkit-mask-image: url('/assets/icons/travel_explore.svg');
+  mask-image: url('/assets/icons/travel_explore.svg');
+}
+
+.i-directions_car {
+  -webkit-mask-image: url('/assets/icons/directions_car.svg');
+  mask-image: url('/assets/icons/directions_car.svg');
+}
+
+.i-apartment {
+  -webkit-mask-image: url('/assets/icons/apartment.svg');
+  mask-image: url('/assets/icons/apartment.svg');
+}
+
+.i-badge {
+  -webkit-mask-image: url('/assets/icons/badge.svg');
+  mask-image: url('/assets/icons/badge.svg');
 }
 
 /* ---------------- 头像：主题色淡底圆 + 线性图标 ---------------- */
@@ -383,6 +458,61 @@ body {
   font-size: 15px;
 }
 
+/* 选人屏活局恢复条：中途退到对线房后的一键续局入口（纯 token 上色，双皮肤自适应） */
+.resume-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 22px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.resume-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.resume-name {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.resume-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.resume-go {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 6px 14px;
+  border: 1px solid var(--accent-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent-strong);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.resume-go:hover {
+  background: var(--accent-strong);
+  color: var(--on-accent);
+}
+
 /* 选人屏的场景分组（杠精房 / 谈判房 / 情商房） */
 .category-group {
   margin-bottom: 26px;
@@ -404,17 +534,6 @@ body {
 .category-hint {
   color: var(--muted);
   font-size: 13px;
-}
-
-.persona-card.locked {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.persona-card.locked:hover {
-  border-color: var(--line);
-  background: var(--surface);
-  transform: none;
 }
 
 .persona-grid {
@@ -602,19 +721,38 @@ body {
 
 /* 返回大厅按钮（选人屏左上 / 对线屏头部） */
 .back-btn {
-  padding: 4px 12px 4px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px 6px 10px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: transparent;
+  background: var(--surface);
   color: var(--muted);
   font-family: inherit;
   font-size: 13px;
+  line-height: 1.2;
   cursor: pointer;
+  transition:
+    color 0.18s ease,
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    transform 0.12s ease;
+}
+
+.back-btn .icon {
+  width: 14px;
+  height: 14px;
 }
 
 .back-btn:hover {
   color: var(--text);
   border-color: var(--accent-strong);
+  background: var(--surface-deep);
+}
+
+.back-btn:active {
+  transform: translateY(1px);
 }
 
 .duel-exit {
@@ -700,7 +838,8 @@ body {
 
 /* 弹窗里的「外观」两段控件 + 「对局」四档时限（类名与 .seg-btn 区分开，别互相污染断言） */
 .theme-seg,
-.round-seg {
+.round-seg,
+.demo-seg {
   display: grid;
   gap: 1px;
   padding: 1px;
@@ -718,8 +857,13 @@ body {
   grid-template-columns: repeat(4, 1fr);
 }
 
+.demo-seg {
+  grid-template-columns: repeat(2, 1fr);
+}
+
 .theme-seg-btn,
-.round-seg-btn {
+.round-seg-btn,
+.demo-seg-btn {
   padding: 9px 6px;
   border: none;
   background: var(--surface-deep);
@@ -731,7 +875,8 @@ body {
 }
 
 .theme-seg-btn.is-active,
-.round-seg-btn.is-active {
+.round-seg-btn.is-active,
+.demo-seg-btn.is-active {
   background: var(--accent);
   color: var(--on-accent);
   font-weight: 700;
@@ -1807,4 +1952,325 @@ body {
     right: 12px;
     width: auto;
   }
+}
+
+/* ---------------- 3.0 成长档案：名片卡 / 心池条 / 结算区 / toast ----------------
+   纯四态令牌，不用硬编码色；组件样式追加在 EOF（同 midnight 覆盖区的先例）。 */
+
+.profile-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 14px;
+  margin: 0 0 16px;
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.profile-strip:hover {
+  border-color: var(--accent-strong);
+}
+
+.profile-lv {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+
+.profile-stat {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+}
+
+.hearts-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 12px;
+  margin: 0 0 16px;
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.hearts-bar .heart {
+  color: var(--accent-strong);
+}
+
+.hearts-bar .heart.dim {
+  opacity: 0.25;
+}
+
+.hearts-eta {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.hearts-buy {
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-deep);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.hearts-buy:not(:disabled):hover {
+  border-color: var(--accent-strong);
+  color: var(--accent-strong);
+}
+
+.hearts-buy:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.hearts-guide {
+  font-size: 12px;
+  color: var(--accent-strong);
+}
+
+.demo-badge {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.settlement {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.settle-head {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+}
+
+.settle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.settle-label {
+  width: 32px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.settle-gain {
+  font-weight: 700;
+  color: var(--accent-strong);
+  white-space: nowrap;
+}
+
+.settle-gain.hurt {
+  color: var(--accent-hover);
+}
+
+.settle-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.settle-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.8s ease;
+}
+
+.settle-level {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.settle-levelup,
+.settle-achv {
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.app-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 60;
+  padding: 10px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-deep);
+  color: var(--text);
+  font-size: 13px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+
+/* ---------------- 3.0 房内关卡梯：推荐关高亮 / 复刷标识（全开放，无锁定态） ---------------- */
+
+/* 推荐关：描边高亮 + 左上角「推荐」角标（本房第一个未通关的关） */
+.persona-card.current {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+
+.level-badge {
+  display: inline-block;
+  align-self: flex-start;
+  margin-top: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent-strong);
+}
+
+.level-badge.replay {
+  background: color-mix(in srgb, var(--muted) 16%, transparent);
+  color: var(--muted);
+}
+
+/* ---- M4 成就：右下角 toast 队列 + 称号小标签 ---- */
+
+.ach-toast-holder {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.ach-toast {
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 13px;
+  animation: ach-toast-in 0.25s ease;
+}
+
+@keyframes ach-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.profile-title {
+  max-width: 9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent-strong);
+  font-size: 12px;
+}
+
+.duel-title-tag {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent-strong);
+  font-size: 12px;
+}
+
+/* ---------------- A1 人设立绘：配了 portrait 的头像用照片填满圆底，没配的仍走线性图标 ---------------- */
+
+.avatar .avatar-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+/* ---------------- A2/A3 小样：屏内场景背景层 + 战报破防插画 ---------------- */
+
+.lobby,
+.duel,
+.report {
+  position: relative;
+}
+
+.screen-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+  pointer-events: none;
+}
+
+/* 插画上蒙一层主题底色纱（四态令牌自动适配深浅），即「叠在皮肤背景之上」的融合度 */
+.screen-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--surface) 62%, transparent);
+}
+
+.lobby > :not(.screen-bg),
+.duel > :not(.screen-bg),
+.report > :not(.screen-bg) {
+  position: relative;
+  z-index: 1;
+}
+
+.spotlight {
+  display: none;
+}
+
+.spotlight.ok {
+  display: block;
+  width: min(340px, 78%);
+  margin: 0 auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
 }

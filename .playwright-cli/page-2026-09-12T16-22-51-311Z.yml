@@ -1,0 +1,32 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]: 嘴强王者TALK KING
+    - generic [ref=e5]:
+      - generic [ref=e6]: 本地引擎
+      - button "皮肤选择" [ref=e7] [cursor=pointer]
+      - button "切换到深色主题" [ref=e9] [cursor=pointer]
+      - button "接入你的 AI" [ref=e11] [cursor=pointer]
+      - button "声音" [ref=e13] [cursor=pointer]
+  - main [ref=e15]:
+    - generic [ref=e315]:
+      - generic [ref=e316]:
+        - button "对线房" [ref=e317] [cursor=pointer]
+        - generic [ref=e322]:
+          - generic [ref=e323]: 五彩斑斓甲方
+          - generic [ref=e324]: 「我要的是那种感觉，你懂吧」
+        - generic [ref=e325]: 第 1 / 8 轮
+      - generic [ref=e328]:
+        - generic [ref=e329]: 怒气值
+        - generic [ref=e330]: "0"
+        - generic [ref=e331]: 礼貌
+      - generic [ref=e336]: 方案看了，感觉不对，你再改改。
+      - generic [ref=e340]:
+        - generic [ref=e341]:
+          - generic [ref=e342]: 预设话术
+          - button "那预算到底是多少？" [ref=e343] [cursor=pointer]
+          - button "您说说具体哪里不对" [ref=e344] [cursor=pointer]
+          - button "合同里写的是三轮改稿，这都第几轮了？" [ref=e345] [cursor=pointer]
+        - generic [ref=e346]:
+          - button "表情包" [ref=e347] [cursor=pointer]
+          - textbox "说点什么，让他绷不住…（Enter 发送，Shift+Enter 换行）" [active] [ref=e349]
+          - button "发送" [ref=e350] [cursor=pointer]

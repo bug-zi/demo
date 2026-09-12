@@ -1,7 +1,7 @@
 {
   "name": "zuiqiang-wangzhe",
   "private": true,
-  "version": "2.0.0",
+  "version": "3.0.0",
   "type": "module",
   "description": "嘴强王者 — 杠精房点火局、谈判房点火局、情商房灭火局，多场景话术对线竞技",
   "scripts": {
@@ -11,7 +11,8 @@
     "smoke": "node scripts/smoke.mjs",
     "dom-check": "node scripts/dom-check.mjs",
     "library-check": "node scripts/library-check.mjs",
-    "arena-check": "node scripts/arena-check.mjs"
+    "arena-check": "node scripts/arena-check.mjs",
+    "profile-check": "node scripts/profile-check.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",

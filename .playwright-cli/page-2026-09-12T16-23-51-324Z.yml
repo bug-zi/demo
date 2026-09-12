@@ -1,0 +1,50 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]: 嘴强王者TALK KING
+    - generic [ref=e5]:
+      - generic [ref=e6]: 本地引擎
+      - button "皮肤选择" [ref=e7] [cursor=pointer]
+      - button "切换到深色主题" [ref=e9] [cursor=pointer]
+      - button "接入你的 AI" [ref=e11] [cursor=pointer]
+      - button "声音" [ref=e13] [cursor=pointer]
+  - main [ref=e15]:
+    - generic [ref=e629]:
+      - generic [ref=e630]:
+        - button "对线房" [ref=e631] [cursor=pointer]
+        - generic [ref=e636]:
+          - generic [ref=e637]: 评论区圣人
+          - generic [ref=e638]: 「理性讨论，别激动」
+        - generic [ref=e639]: 第 3 / 8 轮
+      - generic [ref=e642]:
+        - generic [ref=e643]: 怒气值
+        - generic [ref=e644]: "100"
+        - generic [ref=e645]: 破防
+      - generic [ref=e650]:
+        - generic [ref=e651]: 理性讨论。你这个说法，格局小了。
+        - generic [ref=e666]: 按你这套标准，你自己做到了吗？
+        - generic [ref=e668]: 我、我当然做到了……大部分。
+        - generic [ref=e671]:
+          - generic [ref=e672]: 扎中软肋
+          - generic [ref=e674]: 扎心了 +34
+        - generic [ref=e675]: 别空对空，给我个数据或案例
+        - generic [ref=e683]: 数据随手就有，但我没必要喂你。
+        - generic [ref=e686]:
+          - generic [ref=e687]: 扎中软肋
+          - generic [ref=e689]: 扎心了 +32
+        - generic [ref=e690]: —— TA 进入「上头期」 ——
+        - generic [ref=e691]: 先冷静的是你，急的可是你啊
+        - generic [ref=e693]: 看看，又开始扣帽子了。
+        - generic [ref=e696]:
+          - generic [ref=e697]: 扎中软肋
+          - generic [ref=e699]: 扎心了 +34
+        - generic [ref=e700]: —— 他绷不住了 ——
+      - generic [ref=e654]:
+        - generic [ref=e655]:
+          - generic [ref=e656]: 预设话术
+          - button "按你这套标准，你自己做到了吗？" [disabled] [ref=e657]
+          - button "别空对空，给我个数据或案例" [disabled] [ref=e658]
+          - button "先冷静的是你，急的可是你啊" [disabled] [ref=e659]
+        - generic [ref=e660]:
+          - button "表情包" [disabled] [ref=e661]
+          - textbox "说点什么，让他绷不住…（Enter 发送，Shift+Enter 换行）" [disabled] [ref=e663]
+          - button "发送" [disabled] [ref=e664]

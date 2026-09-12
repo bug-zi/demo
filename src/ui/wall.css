@@ -1,0 +1,249 @@
+/* 成就墙样式 —— 由 index.html 以 <link> 加载（与 styles.css 分立是刻意设计：模块自包含）。
+   只定义新类、不覆写既有类；只用四态令牌（2 皮肤 × 2 深浅自动适配），零写死色。 */
+
+.wall {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(760px, 100%);
+  margin: 0 auto;
+}
+
+.wall-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ---- 名片头 ---- */
+
+.wall-card-slot {
+  display: flex;
+}
+
+.wall-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.wall-title-chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 12px;
+}
+
+.wall-title-chip.empty {
+  background: var(--accent-soft);
+  color: var(--muted);
+}
+
+.wall-progress {
+  display: flex;
+  flex: 1 1 180px;
+  align-items: center;
+  gap: 8px;
+  min-width: 160px;
+}
+
+.wall-progress-label {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.wall-progress-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  overflow: hidden;
+}
+
+.wall-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+
+/* ---- 称号柜 ---- */
+
+.title-vault {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.title-cell {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+}
+
+button.title-cell {
+  cursor: pointer;
+}
+
+button.title-cell:hover {
+  border-color: var(--accent);
+}
+
+.title-cell.on {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  background: var(--accent-soft);
+}
+
+.title-cell.locked {
+  opacity: 0.55;
+}
+
+.title-cell .title-rank {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 12px;
+}
+
+.title-cell .title-name {
+  font-weight: 600;
+}
+
+.title-cell .title-desc {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.title-equip {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--accent-strong);
+}
+
+.title-cell.locked .title-equip {
+  display: none;
+}
+
+/* ---- 成就网格 ---- */
+
+.achv-group-title {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.achv-group {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.achv-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.achv-card.unlocked {
+  border-left: 3px solid var(--accent);
+}
+
+.achv-card.tier-king {
+  border-color: var(--accent-strong);
+}
+
+.achv-card.tier-king.unlocked {
+  border-left-width: 3px;
+}
+
+.achv-card.locked {
+  opacity: 0.55;
+}
+
+.achv-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* ---- A4 徽章小样：有图的成就卡在头部亮出圆形徽章，没图的节点自动摘除不占位 ---- */
+
+.achv-badge {
+  display: none;
+  width: 42px;
+  height: 42px;
+  flex: none;
+  border-radius: 50%;
+}
+
+.achv-badge.ok {
+  display: inline-block;
+}
+
+.achv-name {
+  font-weight: 600;
+}
+
+.achv-card.locked .achv-name {
+  color: var(--muted);
+}
+
+.achv-tier {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.achv-desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  flex: 1;
+}
+
+.achv-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.achv-reward {
+  color: var(--accent-strong);
+}
+
+.achv-time {
+  color: var(--muted);
+}

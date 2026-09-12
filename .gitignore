@@ -31,3 +31,7 @@ Thumbs.db
 CLAUDE.md
 # codegraph 本地索引
 .codegraph/
+
+# AI 生图密钥（美术升级离线脚本用，运行时零依赖）
+.env.art
+out/
